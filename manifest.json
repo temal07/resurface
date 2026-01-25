@@ -1,0 +1,18 @@
+{
+    "manifest_version": 3,
+    "name": "Resurface - Rediscover forgotten pages you've saved or searched before while browsing.",
+    "version": "0.0.1",
+    "description": "Resurface helps you rediscover contextually relevant pages you've searched or saved in the past, saving you time from regoogling.",
+    "permissions": ["storage", "tabs", "activeTab"],
+    "host_permissions": ["*://*/*"],
+    "action": {
+        "default_popup": "popup.html"
+    },
+    "content_scripts": [
+        {
+            "matches": ["<all_urls>"],
+            "js": ["content.js"],
+            "run_at": "document_idle"
+        }
+    ]
+}
