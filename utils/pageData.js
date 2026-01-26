@@ -40,5 +40,5 @@ export const renderPageData = (pageData, container) => {
                 </span>
             </li>
         </ul>
-    `
+    `;
 }
