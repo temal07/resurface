@@ -14,9 +14,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             null;
 
         sendResponse({ description });
-        return true;
         // Return true if you want to send a response asynchronously, but here it's not needed.
         // However, sometimes Chrome extensions require explicit return true for sendResponse if async.
         // Here, since sendResponse is synchronous, this is fine as-is.
     }
+});
+
+// function to extract meaning from a page
+// it will return a string of the page's meaning
+const extractPageMeaning = () => {
+    const title = document.title;
+    const description = document.querySelector("meta[name='description']")?.getAttribute("content") || "";
+    const snippet = document.body.innerText
+        .replace(/\s+/g, " ")
+        .trim();
+
+    return { title, description, snippet };
+}
+
+// Listen for EXTRACT_PAGE_MEANING requests from background.js and respond with the extracted page meaning
+chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
+    if (message.type === "EXTRACT_PAGE_MEANING") {
+        const pageMeaning = extractPageMeaning();
+        console.log("Page meaning extracted:", pageMeaning);
+        sendResponse(pageMeaning);
+    }
+    // Explicitly return true to indicate async response and keep message channel open until sendResponse is called
+    return true;
 });

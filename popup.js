@@ -4,11 +4,13 @@
     to the console as a neat object.
 */
 
-import { pageData, renderPageData, updatePageData } from "./utils/pageData.js";
+import { pageData } from "./utils/pageData.js";
+import { renderPageData, renderRelativePageData, updatePageData } from "./utils/pageData.js";
 import { getActiveTab, getPageDescription } from "./utils/helpers.js";
-import { getBookmarkedPages, getSearchHistory } from "./utils/pageRelevance.js";
+import { getBookmarkedPages, getSearchHistory, comparePages } from "./utils/pageRelevance.js";
 
 const container = document.getElementById("page-container");
+const relatedPageContainer = document.getElementById("relevant-pages-container");
 
 const init = async () => {
     try {
@@ -17,9 +19,19 @@ const init = async () => {
         const searchHistory = await getSearchHistory();
         console.log(searchHistory);
         console.log(bookmarks);
-        pageData.description = await getPageDescription(tab.id);
-        updatePageData({ id: tab.id, name: tab.title, url: tab.url, favIcon: tab.favIconUrl });
+
+        updatePageData({ 
+            id: tab.id, 
+            name: tab.title, 
+            url: tab.url, 
+            favIcon: tab.favIconUrl, 
+            description: await getPageDescription(tab.id),
+        });
+        
+        const comparedResults = comparePages(pageData, bookmarks, searchHistory);
+        console.log(comparedResults);
         renderPageData(pageData, container);
+        renderRelativePageData(comparedResults, relatedPageContainer);
     } catch (err) {
         console.error(err);
         container.innerHTML = `<span class="text-red-500">Failed to load page info</span>`;

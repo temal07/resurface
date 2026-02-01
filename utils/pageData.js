@@ -9,6 +9,32 @@ export const pageData = {
 }
 
 
+export const extractWordsFromUrl = (url) => {
+    try {
+        const { hostname, pathname, search, hash } = new URL(url);
+
+        // Split on . and - and /
+        const parts = [
+            ...hostname.split(/[\.\-]/g),
+            ...pathname.split(/[\/\-\_]/g),
+            ...search.replace(/^\?/, '').split(/[&=_\-]/g),
+            ...hash.replace(/^#/, '').split(/[\-_\?&=]/g)
+        ];
+
+        // Filter out short/meaningless parts, common TLDs, and empty strings
+        return parts
+            .map(part => part.trim().toLowerCase())
+            .filter(word =>
+                word &&
+                word.length > 1 &&
+                !['www', 'com', 'net', 'org', 'io', 'html', 'htm', 'php', 'www2'].includes(word)
+            );
+    } catch (e) {
+        // fallback for invalid URLs
+        return url.split(/[\W_]+/).map(w => w.toLowerCase()).filter(Boolean);
+    }
+}
+
 export const updatePageData = (newData) => {
     Object.assign(pageData, newData);
 }
@@ -41,4 +67,55 @@ export const renderPageData = (pageData, container) => {
             </li>
         </ul>
     `;
+}
+
+export const renderRelativePageData = (results, container) => {
+    container.innerHTML = `
+    <ul class="">
+        ${
+            results.length > 0 ? 
+            results.slice(1)
+                .filter(result => result.score !== 0) // Only render results with non-zero cosine similarity
+                .map(result => {
+                    const trimmedName = result.title && result.title.length > 20 
+                        ? result.title.slice(0, 17) + "..." 
+                        : result.title || "";
+
+                    const trimmedLink = result.url && result.url.length > 30
+                        ? result.url.slice(0, 28) + "..."
+                        : result.url || "";
+
+                    return `
+                    <li class="flex items-center gap-2 py-2 px-2 rounded-md" id="${result.id || ''}">
+                        <img src="${result.favIcon || ''}" alt="Website Icon" class="w-6 h-6 mr-2 rounded" />
+                        <span 
+                            class="text-gray-700 font-medium flex-none"
+                            title="${result.title || ''}"
+                        >
+                            ${trimmedName}
+                        </span>
+                        <span class="text-gray-400 flex items-center ml-2">
+                            <a href="${result.url || '#'}" class="hover:text-blue-700 text-blue-400 truncate max-w-max inline-block align-middle" target="_blank" rel="noopener noreferrer">
+                                ${trimmedLink}
+                            </a>
+                        </span>
+                    </li>
+                    `;
+                }).join('') : `
+                <li class="flex items-center gap-2 py-2 px-2 rounded-md">
+                    <p class="text-gray-400">No results found</p>
+                </li>
+                `
+        }
+    </ul>
+    `;
+}
+
+export const getFavIconFromPage = (url) => {
+    try {
+        const { hostname } = new URL(url);
+        return `https://www.google.com/s2/favicons?sz=64&domain=${hostname}`;
+    } catch (err) {
+        return null;
+    }
 }
