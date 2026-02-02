@@ -25,6 +25,15 @@ export const getPageDescription = (tabId) => {
     });
 };
 
+export const getPageMeaning = (tabId) => {
+    return new Promise((resolve, reject) => {
+        chrome.tabs.sendMessage(tabId, { type: "EXTRACT_PAGE_MEANING" }, (res) => {
+            if (chrome.runtime.lastError) return reject(chrome.runtime.lastError.message);
+            resolve(res);
+        });
+    });
+};
+
 
 export const getFavIconFromPage = (url) => {
     try {

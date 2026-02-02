@@ -4,9 +4,9 @@
     to the console as a neat object.
 */
 
-import { pageData } from "./utils/pageData.js";
+import { fetchGeneratedPageData, pageData } from "./utils/pageData.js";
 import { renderPageData, renderRelativePageData, updatePageData } from "./utils/pageData.js";
-import { getActiveTab, getPageDescription } from "./utils/helpers.js";
+import { getActiveTab, getPageMeaning } from "./utils/helpers.js";
 import { getBookmarkedPages, getSearchHistory, comparePages } from "./utils/pageRelevance.js";
 
 const container = document.getElementById("page-container");
@@ -17,17 +17,24 @@ const init = async () => {
         const tab = await getActiveTab();
         const bookmarks = await getBookmarkedPages();
         const searchHistory = await getSearchHistory();
+
         console.log(searchHistory);
         console.log(bookmarks);
+
+        const pageMeaning = await getPageMeaning(tab.id);
 
         updatePageData({ 
             id: tab.id, 
             name: tab.title, 
             url: tab.url, 
             favIcon: tab.favIconUrl, 
-            description: await getPageDescription(tab.id),
+            description: pageMeaning.description,
+            body: pageMeaning.body,
         });
-        
+
+        const generatedPageData = await fetchGeneratedPageData();
+        console.log(generatedPageData);
+
         const comparedResults = comparePages(pageData, bookmarks, searchHistory);
         console.log(comparedResults);
         renderPageData(pageData, container);
