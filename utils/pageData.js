@@ -6,8 +6,25 @@ export const pageData = {
     url: "",
     favIcon: "",
     description: "",
+    body: "",
 }
 
+
+export const fetchGeneratedPageData = async () => {
+    // Since the URL in fetch is a POST req, specify that it is a post request
+    // that you're fetching
+    const res = await fetch("http://localhost:8000/process-page", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(pageData),
+    });
+
+    const data = await res.json();
+
+    return data;
+}
 
 export const extractWordsFromUrl = (url) => {
     try {
@@ -76,6 +93,7 @@ export const renderRelativePageData = (results, container) => {
             results.length > 0 ? 
             results.slice(1)
                 .filter(result => result.score !== 0) // Only render results with non-zero cosine similarity
+                .slice(0,3)
                 .map(result => {
                     const trimmedName = result.title && result.title.length > 20 
                         ? result.title.slice(0, 17) + "..." 

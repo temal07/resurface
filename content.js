@@ -11,7 +11,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const description = 
             document.querySelector('meta[name="description"]')?.getAttribute("content") ||
             document.querySelector('meta[property="og:description"]')?.getAttribute("content") ||
-            null;
+            "";
 
         sendResponse({ description });
         // Return true if you want to send a response asynchronously, but here it's not needed.
@@ -23,13 +23,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // function to extract meaning from a page
 // it will return a string of the page's meaning
 const extractPageMeaning = () => {
-    const title = document.title;
+    const name = document.title;
     const description = document.querySelector("meta[name='description']")?.getAttribute("content") || "";
-    const snippet = document.body.innerText
+    const body = document.body.innerText
         .replace(/\s+/g, " ")
         .trim();
 
-    return { title, description, snippet };
+    return { name, description, body };
 }
 
 // Listen for EXTRACT_PAGE_MEANING requests from background.js and respond with the extracted page meaning
