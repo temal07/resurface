@@ -4,6 +4,8 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 import os
 from google import genai
+from typing import List, Optional
+
 
 load_dotenv()
 
@@ -33,6 +35,28 @@ class PageDataResponse(BaseModel):
     summary: str
     embedding: list[float]
 
+
+class BookmarkItem(BaseModel):
+    url: str
+    title: str
+    summary: str
+    favIcon: Optional[str] = ""
+    tags: Optional[List[str]] = None
+
+
+class SearchHistoryItem(BaseModel):
+    url: str
+    title: str
+    summary: str
+    timestamp: Optional[str] = None
+    query: Optional[str] = None
+    
+
+class ReasoningResponse(BaseModel):
+    url: str
+    title: str
+    pages: list[BookmarkItem, SearchHistoryItem]
+    reasoning: str
 
 # -------- Routes --------
 
@@ -88,3 +112,31 @@ def process_page(req: PageDataRequest):
         "summary": summary,
         "embedding": embedding,
     }
+
+@app.post("/page-reasoning", response_model=ReasoningResponse)
+def page_reasoning(req: PageDataResponse):
+
+    ### 1. Build Prompt:
+
+    prompt = f"""
+        You are an AI asisstant and your job is to recommend relevant pages from the user's bookmarks and search history. 
+
+        Here is the summary of the current page: 
+        Summary: {req.summary}
+
+        Based on the summary of the page that the user is currently on, suggest UP TO 5 pages (NO MORE) from the user's bookmarks. 
+        You should suggest a MINIMUM of 3 pages and a MAXIMUM of 5 pages.
+
+        Before suggesting, INTERPRET the WHOLE summary, and then decide WHERE to search before giving a response. 
+    """
+
+    try:
+        recommendation = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+        )
+        recs = recommendation.text.strip()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Summary failed: {e}")
+
+    return { recs }

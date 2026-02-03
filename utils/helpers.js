@@ -98,3 +98,78 @@ export const cosineSimilarity = (vecA, vecB) => {
     return (dp / (magnitudeA * magnitudeB));
 }
 
+export const classifyPage = () => {
+    const totalText = document.body.innerText;
+    const totalLen  = totalText.length;
+
+    // Classification for static pages
+    const main = document.querySelector("main, article");
+    const coreText = main ? main.innerText : "";
+    const coreLen = coreText.length;
+
+    if (coreLen >= 1200 && coreLen > totalLen >= 0.45) {
+        return "STATIC_DOMINANT";
+    }
+
+    return "DYNAMIC_DOMINANT";
+}
+
+export const isNoiseNode = (element) => {
+    // returns a boolean that specifies whether there are any "noisy" HTML elements 
+    // specified below
+    const noiseElems = ["nav", "menu", "sidebar", "footer", "header", "ads"];
+    const attrs = `${element.className} ${element.id}`.toLowerCase();
+
+    return noiseElems.some(k => attrs.includes(k));
+}
+
+export const extractStaticContent = () => {
+    let container = document.querySelector("article") || document.querySelector("main");
+
+    // if container does not exist, reassign the container to the largest div element by text length
+    if (!container) {
+        const divs = [...document.querySelectorAll("div")]
+        
+        container = divs.reduce((best, elem) => {
+            elem.innerText.length > (best?.innerText.length || 0) ? elem : best,
+            null;
+        });
+    }
+
+    if (!container) return "";
+
+    const text = [...container.querySelectorAll("*")]
+        .filter(elem => !isNoiseNode(elem))
+        .map(elem => elem.innerText)
+        .join(" ");
+
+    return text.replace(/\s+/g, " ").trim();
+}
+
+export const extractDynamicContent = () => {
+    const viewportCenter = window.innerHeight / 2;
+
+    const textBlocks = [...document.querySelectorAll("p, span, div")]
+        .filter(elem => {
+            const rect = elem.getBoundingClientRect();
+            return rect.top < viewportCenter && rect.bottom > viewportCenter;
+        })
+        .filter(elem => !isNoiseNode(elem))
+        .map(elem => elem.innerText.trim())
+        .filter(t => t.length > 30);
+
+    return textBlocks.join(" ").slice(0, 1500);
+}
+
+export const processURL = (url) => {
+    try {
+        const u = new URL(url);
+        return u.pathname
+            .split("/")
+            .filter(Boolean)
+            .join(" ")
+            .replace(/[-_]/g, " ");
+    } catch {
+        return "";
+    }
+}
