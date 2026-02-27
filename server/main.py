@@ -134,7 +134,7 @@ def process_page(req: PageDataRequest):
     # ---- 3. Generate embedding ----
     try:
         embed_resp = client.models.embed_content(
-            model="text-embedding-004",
+            model="text-embedding-001",
             contents=f"{req.name}\n{req.description}\n{summary}",
         )
         embedding = embed_resp.embeddings[0].values
