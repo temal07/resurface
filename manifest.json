@@ -5,8 +5,20 @@
     "description": "Resurface helps you rediscover contextually relevant pages you've searched or saved in the past, saving you time from regoogling.",
     "permissions": ["bookmarks", "storage", "tabs", "activeTab", "history", "scripting"],
     "host_permissions": ["https://*/*", "http://*/*"],
+    "web_accessible_resources": [
+        {
+            "resources": ["utils/helpers.js"],
+            "matches": ["<all_urls>"]
+        }
+    ],
     "action": {
-        "default_popup": "popup.html"
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "icons/resurface_logo.png",
+            "32": "icons/resurface_logo.png",
+            "48": "icons/resurface_logo.png",
+            "128": "icons/resurface_logo.png"
+        }
     },
     "background": {
         "service_worker": "background.js",
@@ -16,7 +28,6 @@
         {
             "matches": ["<all_urls>"],
             "js": ["content.js"],
-            "type": "module",
             "run_at": "document_idle"
         }
     ]

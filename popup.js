@@ -4,7 +4,7 @@
     to the console as a neat object.
 */
 
-import { fetchGeneratedPageData, pageData } from "./utils/pageData.js";
+import { fetchGeneratedPageData, fetchPageReasoningData, pageData, reasoningData } from "./utils/pageData.js";
 import { renderPageData, renderRelativePageData, updatePageData } from "./utils/pageData.js";
 import { getActiveTab, getPageMeaning } from "./utils/helpers.js";
 import { getBookmarkedPages, getSearchHistory, comparePages } from "./utils/pageRelevance.js";
@@ -33,7 +33,13 @@ const init = async () => {
         });
 
         const generatedPageData = await fetchGeneratedPageData();
+        reasoningData.summary = generatedPageData.summary;
+        reasoningData.embedding = generatedPageData.embedding;
+        
+        const recommendations = await fetchPageReasoningData(reasoningData);
+
         console.log(generatedPageData);
+        console.log(recommendations);
 
         const comparedResults = comparePages(pageData, bookmarks, searchHistory);
         console.log(comparedResults);

@@ -9,6 +9,10 @@ export const pageData = {
     body: "",
 }
 
+export let reasoningData = {
+    summary: "",
+    embedding: [],
+}
 
 export const fetchGeneratedPageData = async () => {
     // Since the URL in fetch is a POST req, specify that it is a post request
@@ -19,6 +23,20 @@ export const fetchGeneratedPageData = async () => {
             "Content-Type": "application/json",
         },
         body: JSON.stringify(pageData),
+    });
+
+    const data = await res.json();
+
+    return data;
+}
+
+export const fetchPageReasoningData = async (reasoningData) => {
+    const res = await fetch("http://localhost:8000/page-reasoning", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(reasoningData),
     });
 
     const data = await res.json();

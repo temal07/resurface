@@ -1,10 +1,11 @@
+import json
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import os
 from google import genai
-from typing import List, Optional
+from typing import List, Optional, Union
 
 
 load_dotenv()
@@ -33,7 +34,7 @@ class PageDataRequest(BaseModel):
 
 class PageDataResponse(BaseModel):
     summary: str
-    embedding: list[float]
+    embedding: List[float]
 
 
 class BookmarkItem(BaseModel):
@@ -55,7 +56,7 @@ class SearchHistoryItem(BaseModel):
 class ReasoningResponse(BaseModel):
     url: str
     title: str
-    pages: list[BookmarkItem, SearchHistoryItem]
+    pages: list[Union[BookmarkItem, SearchHistoryItem]]
     reasoning: str
 
 # -------- Routes --------
@@ -70,9 +71,32 @@ def process_page(req: PageDataRequest):
 
     # ---- 1. Build prompt dynamically ----
     prompt = f"""
-        You are an AI assistant and your job is to summarise the following web page as best as possible.
-        When summarising, IGNORE ads, menus, cookie notices, and navigation. The page structure is the following:
+        You are an information extraction system.
 
+        Your task is to infer the PRIMARY INTENT of the user based ONLY on the content provided on the page.
+        You are NOT allowed to invent context or rely on prior knowledge of the website.
+
+        You must follow the rules below STRICTLY.
+
+        DISALLOWED CONTENT:
+        - IGNORE navigation menus, sidebars, headers, footers, buttons, UI labels, account controls, and repeated interface text.
+        - IGNORE generic platform disclaimers, legal text, onboarding hints, or boilerplate.
+        - DO NOT describe the website or app itself unless the main content explicitly discusses it.
+
+        FOCUS RULES:
+        - Summaries MUST begin by stating the subject matter directly.
+        - Focus ONLY on the main semantic content and the current interaction or discussion.
+        - Identify ONE dominant topic or problem. Do NOT blend multiple unrelated topics.
+        - DO NOT describe the structure, flow, or progression of the conversation or interaction.
+        - DO NOT mention that the content is part of a discussion, framework, or guided process.
+        - Extract ONLY the subject matter being discussed, not how it is being discussed.
+        - DO NOT describe conversations, discussions, explorations, or thought processes.
+        - Rewrite the content as if it were a neutral encyclopedia entry about the subject matter.
+
+        INTENT QUESTION:
+        "What is the user likely reading, working on, or thinking about on this page right now?"
+
+        INPUT FORMAT:
         Title: {req.name}
         Description: {req.description}
         URL: {req.url}
@@ -80,12 +104,21 @@ def process_page(req: PageDataRequest):
         Fav Icon: {req.favIcon}
         Body: {req.body}
 
-        You should use the data as MEANINGFULLY as possible and should extract ALL the meaning, context, and the intent of 
-        the page by looking at the page data. When extracting meaning and context, IGNORE the Fav Icon and ID
-        of the page, and make the title, description, and the body of the page a PRIORITY. You should still consider
-        the URL of the page, but when it comes to documentation pages, or technical pages, make it a priority along 
-        others as well. 
+        DATA PRIORITY:
+        - Prioritise Body > Title > Description.
+        - Use the URL ONLY if it clearly encodes semantic meaning (e.g. technical documentation paths).
+        - IGNORE Fav Icon and ID entirely.
 
+        OUTPUT FORMAT (STRICT):
+        Return a single paragraph (4 to 5 sentences) describing:
+        1. The primary topic or problem
+        2. The user's likely intent
+        3. Key technical, conceptual, or contextual details
+
+        FAILURE CONDITION:
+        If the provided content does not contain enough meaningful signal to confidently infer user intent,
+        respond EXACTLY with:
+        INSUFFICIENT_CONTEXT
     """
 
     # ---- 2. Generate summary ----
@@ -119,24 +152,42 @@ def page_reasoning(req: PageDataResponse):
     ### 1. Build Prompt:
 
     prompt = f"""
-        You are an AI asisstant and your job is to recommend relevant pages from the user's bookmarks and search history. 
+        You are a reasoning system that helps decide HOW to search a user's saved pages.
 
-        Here is the summary of the current page: 
-        Summary: {req.summary}
+        You are NOT allowed to recommend specific pages or URLs.
 
-        Based on the summary of the page that the user is currently on, suggest UP TO 5 pages (NO MORE) from the user's bookmarks. 
-        You should suggest a MINIMUM of 3 pages and a MAXIMUM of 5 pages.
+        INPUT:
+        Current page summary:
+        {req.summary}
 
-        Before suggesting, INTERPRET the WHOLE summary, and then decide WHERE to search before giving a response. 
+        TASK:
+        Infer the user's current intent and decide:
+        - What topic this page is about
+        - What kinds of previously visited or bookmarked pages would be relevant
+        - What should be excluded
+
+        OUTPUT FORMAT (STRICT JSON):
+        {{
+            "url": str
+            "title": str
+            "pages": list[Union[BookmarkItem, SearchHistoryItem]]
+        }}
+
+        Rules:
+        - Do NOT invent pages
+        - Do NOT mention websites unless implied by the summary
+        - Be concise and concrete
     """
 
     try:
-        recommendation = client.models.generate_content(
+        response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
         )
-        recs = recommendation.text.strip()
+
+        reasoning = json.loads(response.text)
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Summary failed: {e}")
 
-    return { recs }
+    return reasoning
