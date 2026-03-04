@@ -32,10 +32,18 @@ const init = async () => {
         const cacheKey = `embed:${tab.url}`;
         const cached = await chrome.storage.local.get(cacheKey);
 
-        const generatedPageData = cached[cacheKey] 
-            ? cached[cacheKey]
-            : await fetchGeneratedPageData();
+        let generatedPageData = cached[cacheKey] || null;
 
+        if (!generatedPageData) {
+            try {
+                generatedPageData = await fetchGeneratedPageData();
+                // Cache it for next time
+                await chrome.storage.local.set({ [cacheKey]: generatedPageData });
+            } catch (err) {
+                console.warn("Process page failed, proceeding without embedding", err);
+                generatedPageData = { summary: null, embedding: null };
+            }
+        }
         let finalResults;
 
         try {
