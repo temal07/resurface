@@ -44,7 +44,7 @@ export const getSearchHistory = () => {
         chrome.history.search({
             text: '',
             startTime: oneWeekAgo,
-            maxResults: 10,
+            maxResults: 100,
         }, (historyItems) => {
             resolve(historyItems);
         });

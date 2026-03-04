@@ -48,7 +48,12 @@ const init = async () => {
 
         try {
             // Primary: embedding-based similarity
-            const compareData = await compareEmbeddingResponse();
+            const compareData = await compareEmbeddingResponse(
+                generatedPageData.embedding,
+                bookmarks,
+                searchHistory
+            );
+            console.log("Compare Data: ", compareData);
             finalResults = compareData.pages.map(page => ({
                 url: page.url,
                 title: page.title,
@@ -61,6 +66,7 @@ const init = async () => {
             try {
                 // Secondary: Gemini ranking
                 const recommendations = await fetchPageReasoningData(generatedPageData.summary);
+                console.log(recommendations);
                 finalResults = recommendations.pages.map(page => ({
                     url: page.url,
                     title: page.title,
@@ -77,8 +83,8 @@ const init = async () => {
             }
         }
 
-        console.log(generatedPageData);
-        console.log(finalResults);
+        console.log("Generated Page Data:", generatedPageData);
+        console.log("Final Results:", finalResults);
 
         renderPageData(pageData, container);
         renderRelativePageData(finalResults, relatedPageContainer);

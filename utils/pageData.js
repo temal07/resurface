@@ -9,18 +9,17 @@ export const pageData = {
     body: "",
 }
 
-export const compareEmbeddingResponse = async () => {
+export const compareEmbeddingResponse = async (embedding, bookmarks, searchHistory) => {
     const res = await fetch("http://localhost:8000/compare-pages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            embedding: generatedPageData.embedding,
-            bookmarks,
-            history: searchHistory,
+            embedding,
+            bookmarks: bookmarks.map(b => ({ url: b.url, title: b.title, summary: "" })),
+            history: searchHistory.map(h => ({ url: h.url, title: h.title, summary: "", timestamp: h.lastVisitTime?.toString() || null })),
         }),
     });
     const compareData = await res.json();
-
     return compareData;
 }
 
