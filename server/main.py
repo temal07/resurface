@@ -143,7 +143,7 @@ def process_page(req: PageDataRequest):
     # ---- 2. Generate summary ----
     try:
         summary_resp = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-pro",
             contents=prompt,
         )
         summary = summary_resp.text.strip()
@@ -208,7 +208,7 @@ def page_reasoning(req: PageReasoningRequest):
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-pro",
             contents=prompt,
         )
         text = response.text.strip().removeprefix("```json").removesuffix("```").strip()
