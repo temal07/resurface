@@ -9,6 +9,21 @@ export const pageData = {
     body: "",
 }
 
+export const compareEmbeddingResponse = async () => {
+    const res = await fetch("http://localhost:8000/compare-pages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            embedding: generatedPageData.embedding,
+            bookmarks,
+            history: searchHistory,
+        }),
+    });
+    const compareData = await res.json();
+
+    return compareData;
+}
+
 export const fetchGeneratedPageData = async () => {
     // Since the URL in fetch is a POST req, specify that it is a post request
     // that you're fetching

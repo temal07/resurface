@@ -4,7 +4,7 @@
     to the console as a neat object.
 */
 
-import { fetchGeneratedPageData, fetchPageReasoningData, pageData } from "./utils/pageData.js";
+import { fetchGeneratedPageData, fetchPageReasoningData, pageData, compareEmbeddingResponse } from "./utils/pageData.js";
 import { renderPageData, renderRelativePageData, updatePageData, getFavIconFromPage } from "./utils/pageData.js";
 import { getActiveTab, getPageMeaning } from "./utils/helpers.js";
 import { getBookmarkedPages, getSearchHistory, comparePages } from "./utils/pageRelevance.js";
@@ -34,17 +34,31 @@ const init = async () => {
         let finalResults;
 
         try {
-            const recommendations = await fetchPageReasoningData(generatedPageData.summary);
-            finalResults = recommendations.pages.map(page => ({
+            // Primary: embedding-based similarity
+            const compareData = await compareEmbeddingResponse();
+            finalResults = compareData.pages.map(page => ({
                 url: page.url,
                 title: page.title,
                 favIcon: getFavIconFromPage(page.url),
-                reasoning: page.reason,
-                score: 1,
+                score: page.score,
             }));
         } catch (err) {
-            console.warn("Reasoning endpoint failed, falling back to cosine similarity", err);
-            finalResults = comparePages(pageData, bookmarks, searchHistory, generatedPageData.summary);
+            console.warn("Embedding comparison failed, trying Gemini ranking", err);
+            try {
+                // Secondary: Gemini ranking
+                const recommendations = await fetchPageReasoningData(generatedPageData.summary);
+                finalResults = recommendations.pages.map(page => ({
+                    url: page.url,
+                    title: page.title,
+                    favIcon: getFavIconFromPage(page.url),
+                    reason: page.reason,
+                    score: 1,
+                }));
+            } catch (err2) {
+                console.warn("Gemini ranking failed, falling back to local TF-IDF", err2);
+                // Fallback: local cosine similarity on summary
+                finalResults = comparePages(pageData, bookmarks, searchHistory, generatedPageData.summary);
+            }
         }
 
         console.log(generatedPageData);

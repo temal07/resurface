@@ -1,4 +1,5 @@
 import json
+import math
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -65,6 +66,20 @@ class RankedPage(BaseModel):
 
 class PageReasoningResponse(BaseModel):
     pages: List[RankedPage]
+
+
+class CompareRequest(BaseModel):
+    embedding: List[float]
+    bookmarks: List[BookmarkItem]
+    history: List[SearchHistoryItem]
+
+class ScoredPage(BaseModel):
+    url: str
+    title: str
+    score: float
+
+class CompareResponse(BaseModel):
+    pages: List[ScoredPage]
 
 # -------- Routes --------
 
@@ -150,6 +165,7 @@ def process_page(req: PageDataRequest):
         "embedding": embedding,
     }
 
+
 @app.post("/page-reasoning", response_model=PageReasoningResponse)
 def page_reasoning(req: PageReasoningRequest):
 
@@ -201,3 +217,49 @@ def page_reasoning(req: PageReasoningRequest):
         raise HTTPException(status_code=500, detail=f"Reasoning failed: {e}")
 
     return reasoning
+
+
+# helper func
+def cosine_similarity(a: List[float], b: List[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    mag_a = math.sqrt(sum(x * x for x in a))
+    mag_b = math.sqrt(sum(x * x for x in b))
+    if mag_a == 0 or mag_b == 0:
+        return 0.0
+    return dot / (mag_a * mag_b)
+
+@app.post("/compare-pages", response_model=CompareResponse)
+def compare_pages(req: CompareRequest):
+     # Cap candidates to avoid slow embedding calls
+    candidates = [
+        {"url": b.url, "title": b.title} for b in req.bookmarks[:30]
+    ] + [
+        {"url": h.url, "title": h.title} for h in req.history[:20]
+    ]
+
+    # Embed all candidates in one batch call
+    texts = [f"{c['title']}\n{c['url']}" for c in candidates]
+
+    try:
+        embed_resp = client.models.embed_content(
+            model="gemini-embedding-001",
+            contents=texts,
+        )
+        embeddings = [e.values for e in embed_resp.embeddings]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Embedding failed: {e}")
+
+    # Score each candidate
+    scored = []
+    for candidate, embedding in zip(candidates, embeddings):
+        score = cosine_similarity(req.embedding, embedding)
+        scored.append({
+            "url": candidate["url"],
+            "title": candidate["title"],
+            "score": score,
+        })
+
+    # Sort and return top 5
+    top = sorted(scored, key=lambda x: x["score"], reverse=True)[:5]
+
+    return {"pages": top}
