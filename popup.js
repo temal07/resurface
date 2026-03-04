@@ -42,6 +42,7 @@ const init = async () => {
                 favIcon: getFavIconFromPage(page.url),
                 score: page.score,
             }));
+            console.log("FINAL RESULTS COME FROM EMBEDDINGS!");
         } catch (err) {
             console.warn("Embedding comparison failed, trying Gemini ranking", err);
             try {
@@ -54,10 +55,12 @@ const init = async () => {
                     reason: page.reason,
                     score: 1,
                 }));
+                console.log("FINAL RESULTS COME FROM GEMINI-GENERATED SUMMARY!");
             } catch (err2) {
                 console.warn("Gemini ranking failed, falling back to local TF-IDF", err2);
                 // Fallback: local cosine similarity on summary
                 finalResults = comparePages(pageData, bookmarks, searchHistory, generatedPageData.summary);
+                console.log("FINAL RESULTS COME FROM LOCAL TF-IDF + COSINE SIM!");
             }
         }
 
