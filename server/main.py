@@ -51,13 +51,20 @@ class SearchHistoryItem(BaseModel):
     summary: str
     timestamp: Optional[str] = None
     query: Optional[str] = None
-    
 
-class ReasoningResponse(BaseModel):
+
+class PageReasoningRequest(BaseModel):
+    summary: str
+    bookmarks: List[BookmarkItem]
+    history: List[SearchHistoryItem]
+
+class RankedPage(BaseModel):
     url: str
     title: str
-    pages: list[Union[BookmarkItem, SearchHistoryItem]]
-    reasoning: str
+    reason: str
+
+class PageReasoningResponse(BaseModel):
+    pages: List[RankedPage]
 
 # -------- Routes --------
 
@@ -100,14 +107,11 @@ def process_page(req: PageDataRequest):
         Title: {req.name}
         Description: {req.description}
         URL: {req.url}
-        ID: {req.id}
-        Fav Icon: {req.favIcon}
         Body: {req.body}
 
         DATA PRIORITY:
         - Prioritise Body > Title > Description.
         - Use the URL ONLY if it clearly encodes semantic meaning (e.g. technical documentation paths).
-        - IGNORE Fav Icon and ID entirely.
 
         OUTPUT FORMAT (STRICT):
         Return a single paragraph (4 to 5 sentences) describing:
@@ -134,7 +138,7 @@ def process_page(req: PageDataRequest):
     # ---- 3. Generate embedding ----
     try:
         embed_resp = client.models.embed_content(
-            model="text-embedding-001",
+            model="gemini-embedding-001",
             contents=f"{req.name}\n{req.description}\n{summary}",
         )
         embedding = embed_resp.embeddings[0].values
@@ -146,48 +150,54 @@ def process_page(req: PageDataRequest):
         "embedding": embedding,
     }
 
-@app.post("/page-reasoning", response_model=ReasoningResponse)
-def page_reasoning(req: PageDataResponse):
+@app.post("/page-reasoning", response_model=PageReasoningResponse)
+def page_reasoning(req: PageReasoningRequest):
 
-    ### 1. Build Prompt:
+    bookmarks_text = "\n".join(
+        [f"- [{b.title}]({b.url})" for b in req.bookmarks]
+    ) or "None"
+
+    history_text = "\n".join(
+        [f"- [{h.title}]({h.url})" for h in req.history]
+    ) or "None"
 
     prompt = f"""
-        You are a reasoning system that helps decide HOW to search a user's saved pages.
+        You are a relevance ranking system for a browser extension.
 
-        You are NOT allowed to recommend specific pages or URLs.
-
-        INPUT:
-        Current page summary:
+        The user is currently on a page with this intent:
         {req.summary}
 
-        TASK:
-        Infer the user's current intent and decide:
-        - What topic this page is about
-        - What kinds of previously visited or bookmarked pages would be relevant
-        - What should be excluded
+        Below are the user's bookmarks and recent history. Return the top 3 most relevant pages.
 
-        OUTPUT FORMAT (STRICT JSON):
+        BOOKMARKS:
+        {bookmarks_text}
+
+        RECENT HISTORY:
+        {history_text}
+
+        OUTPUT FORMAT (strict JSON, no markdown fences):
         {{
-            "url": str
-            "title": str
-            "pages": list[Union[BookmarkItem, SearchHistoryItem]]
+            "pages": [
+                {{"url": "...", "title": "...", "reason": "one sentence why it's relevant"}},
+                ...
+            ]
         }}
 
         Rules:
-        - Do NOT invent pages
-        - Do NOT mention websites unless implied by the summary
-        - Be concise and concrete
-    """
+        - Only return pages from the lists above. Do NOT invent URLs.
+        - Do NOT return the current page. The current page is seen by the user and is not relevant to the user's intent.
+        - Return at most 5 pages. Do NOT pad with weak results just to reach 5. 
+        - If nothing is relevant, return an empty list.
+        """
 
     try:
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
         )
-
-        reasoning = json.loads(response.text)
-        
+        text = response.text.strip().removeprefix("```json").removesuffix("```").strip()
+        reasoning = json.loads(text)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Summary failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Reasoning failed: {e}")
 
     return reasoning

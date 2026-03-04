@@ -52,9 +52,9 @@ export const getSearchHistory = () => {
 }
 
 
-export const comparePages = (currentPage, bookmarks, historyItems) => {
+export const comparePages = (currentPage, bookmarks, historyItems, summary) => {
     // Get every currentPageData into one giant array
-    const tokenisedCurrentPage = [...tokenise(currentPage.name), ...extractWordsFromUrl(currentPage.url)];
+    const tokenisedCurrentPage = summary ? tokenise(summary) : [...tokenise(currentPage.name), ...extractWordsFromUrl(currentPage.url)];
     const vectorisedCurrentPage = vectorise(tokenisedCurrentPage);
 
     // stores the top pages' data

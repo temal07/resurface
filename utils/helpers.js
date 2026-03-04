@@ -107,7 +107,7 @@ export const classifyPage = () => {
     const coreText = main ? main.innerText : "";
     const coreLen = coreText.length;
 
-    if (coreLen >= 1200 && coreLen > totalLen >= 0.45) {
+    if (coreLen >= 1200 && (coreLen > totalLen) >= 0.45) {
         return "STATIC_DOMINANT";
     }
 
@@ -130,10 +130,9 @@ export const extractStaticContent = () => {
     if (!container) {
         const divs = [...document.querySelectorAll("div")]
         
-        container = divs.reduce((best, elem) => {
-            elem.innerText.length > (best?.innerText.length || 0) ? elem : best,
-            null;
-        });
+        container = divs.reduce((best, elem) =>
+            elem.innerText.length > (best?.innerText.length || 0) ? elem : best
+        , null);
     }
 
     if (!container) return "";

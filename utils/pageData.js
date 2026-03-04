@@ -9,11 +9,6 @@ export const pageData = {
     body: "",
 }
 
-export let reasoningData = {
-    summary: "",
-    embedding: [],
-}
-
 export const fetchGeneratedPageData = async () => {
     // Since the URL in fetch is a POST req, specify that it is a post request
     // that you're fetching
@@ -30,17 +25,35 @@ export const fetchGeneratedPageData = async () => {
     return data;
 }
 
-export const fetchPageReasoningData = async (reasoningData) => {
+export const fetchPageReasoningData = async (summary) => {
+    // Fetch bookmarks
+    const rawBookmarks = await chrome.bookmarks.getRecent(50);
+    const bookmarks = rawBookmarks
+        .filter(b => b.url)
+        .map(b => ({
+            url: b.url,
+            title: b.title || "",
+            summary: "",
+        }));
+
+    // Fetch recent history
+    const rawHistory = await chrome.history.search({ text: "", maxResults: 50 });
+    const history = rawHistory
+        .filter(h => h.url)
+        .map(h => ({
+            url: h.url,
+            title: h.title || "",
+            summary: "",
+            timestamp: h.lastVisitTime?.toString() || null,
+        }));
+
     const res = await fetch("http://localhost:8000/page-reasoning", {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(reasoningData),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ summary, bookmarks, history }),
     });
 
     const data = await res.json();
-
     return data;
 }
 
@@ -104,34 +117,33 @@ export const renderPageData = (pageData, container) => {
     `;
 }
 
-export const renderRelativePageData = (results, container) => {
+export const renderRelativePageData = (recommendations, container) => {
     container.innerHTML = `
     <ul class="">
         ${
-            results.length > 0 ? 
-            results.slice(1)
-                .filter(result => result.score !== 0) // Only render results with non-zero cosine similarity
+            recommendations.length > 0 ? 
+            recommendations.slice(1)
                 .slice(0,3)
-                .map(result => {
-                    const trimmedName = result.title && result.title.length > 20 
-                        ? result.title.slice(0, 17) + "..." 
-                        : result.title || "";
+                .map(page => {
+                    const trimmedName = page.title && page.title.length > 20 
+                        ? page.title.slice(0, 17) + "..." 
+                        : page.title;
 
-                    const trimmedLink = result.url && result.url.length > 30
-                        ? result.url.slice(0, 28) + "..."
-                        : result.url || "";
+                    const trimmedLink = page.url && page.url.length > 30
+                        ? page.url.slice(0, 28) + "..."
+                        : page.url;
 
                     return `
-                    <li class="flex items-center gap-2 py-2 px-2 rounded-md" id="${result.id || ''}">
-                        <img src="${result.favIcon || ''}" alt="Website Icon" class="w-6 h-6 mr-2 rounded" />
+                    <li class="flex items-center gap-2 py-2 px-2 rounded-md" id="${page.id || ''}">
+                        <img src="${page.favIcon}" alt="Website Icon" class="w-6 h-6 mr-2 rounded" />
                         <span 
                             class="text-gray-700 font-medium flex-none"
-                            title="${result.title || ''}"
+                            title="${page.title}"
                         >
                             ${trimmedName}
                         </span>
                         <span class="text-gray-400 flex items-center ml-2">
-                            <a href="${result.url || '#'}" class="hover:text-blue-700 text-blue-400 truncate max-w-max inline-block align-middle" target="_blank" rel="noopener noreferrer">
+                            <a href="${page.url}" class="hover:text-blue-700 text-blue-400 truncate max-w-max inline-block align-middle" target="_blank" rel="noopener noreferrer">
                                 ${trimmedLink}
                             </a>
                         </span>
@@ -152,6 +164,6 @@ export const getFavIconFromPage = (url) => {
         const { hostname } = new URL(url);
         return `https://www.google.com/s2/favicons?sz=64&domain=${hostname}`;
     } catch (err) {
-        return null;
+        return "https://www.google.com/s2/favicons?sz=64&domain=example.com";
     }
 }

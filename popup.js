@@ -4,8 +4,8 @@
     to the console as a neat object.
 */
 
-import { fetchGeneratedPageData, fetchPageReasoningData, pageData, reasoningData } from "./utils/pageData.js";
-import { renderPageData, renderRelativePageData, updatePageData } from "./utils/pageData.js";
+import { fetchGeneratedPageData, fetchPageReasoningData, pageData } from "./utils/pageData.js";
+import { renderPageData, renderRelativePageData, updatePageData, getFavIconFromPage } from "./utils/pageData.js";
 import { getActiveTab, getPageMeaning } from "./utils/helpers.js";
 import { getBookmarkedPages, getSearchHistory, comparePages } from "./utils/pageRelevance.js";
 
@@ -17,9 +17,6 @@ const init = async () => {
         const tab = await getActiveTab();
         const bookmarks = await getBookmarkedPages();
         const searchHistory = await getSearchHistory();
-
-        console.log(searchHistory);
-        console.log(bookmarks);
 
         const pageMeaning = await getPageMeaning(tab.id);
 
@@ -33,18 +30,28 @@ const init = async () => {
         });
 
         const generatedPageData = await fetchGeneratedPageData();
-        reasoningData.summary = generatedPageData.summary;
-        reasoningData.embedding = generatedPageData.embedding;
-        
-        const recommendations = await fetchPageReasoningData(reasoningData);
+
+        let finalResults;
+
+        try {
+            const recommendations = await fetchPageReasoningData(generatedPageData.summary);
+            finalResults = recommendations.pages.map(page => ({
+                url: page.url,
+                title: page.title,
+                favIcon: getFavIconFromPage(page.url),
+                reasoning: page.reason,
+                score: 1,
+            }));
+        } catch (err) {
+            console.warn("Reasoning endpoint failed, falling back to cosine similarity", err);
+            finalResults = comparePages(pageData, bookmarks, searchHistory, generatedPageData.summary);
+        }
 
         console.log(generatedPageData);
-        console.log(recommendations);
+        console.log(finalResults);
 
-        const comparedResults = comparePages(pageData, bookmarks, searchHistory);
-        console.log(comparedResults);
         renderPageData(pageData, container);
-        renderRelativePageData(comparedResults, relatedPageContainer);
+        renderRelativePageData(finalResults, relatedPageContainer);
     } catch (err) {
         console.error(err);
         container.innerHTML = `<span class="text-red-500">Failed to load page info</span>`;
