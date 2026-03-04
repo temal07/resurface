@@ -107,7 +107,9 @@ export const classifyPage = () => {
     const coreText = main ? main.innerText : "";
     const coreLen = coreText.length;
 
-    if (coreLen >= 1200 && (coreLen > totalLen) >= 0.45) {
+    const coreRatio = totalLen > 0 ? coreLen / totalLen : 0;
+
+    if (coreLen >= 1200 && coreRatio >= 0.45) {
         return "STATIC_DOMINANT";
     }
 

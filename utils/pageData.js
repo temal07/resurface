@@ -122,8 +122,7 @@ export const renderRelativePageData = (recommendations, container) => {
     <ul class="">
         ${
             recommendations.length > 0 ? 
-            recommendations.slice(1)
-                .slice(0,3)
+            recommendations.slice(0,3)
                 .map(page => {
                     const trimmedName = page.title && page.title.length > 20 
                         ? page.title.slice(0, 17) + "..." 
