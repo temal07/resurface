@@ -29,7 +29,12 @@ const init = async () => {
             body: pageMeaning.body,
         });
 
-        const generatedPageData = await fetchGeneratedPageData();
+        const cacheKey = `embed:${tab.url}`;
+        const cached = await chrome.storage.local.get(cacheKey);
+
+        const generatedPageData = cached[cacheKey] 
+            ? cached[cacheKey]
+            : await fetchGeneratedPageData();
 
         let finalResults;
 
