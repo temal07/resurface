@@ -9,10 +9,12 @@ export const pageData = {
     body: "",
 }
 
-import { cosineSimilarity } from "./helpers";
+import { cosineSimilarity } from "./helpers.js";
+import { BACKEND_URL } from "./constants.js";
+
 
 export const compareEmbeddingResponse = async (embedding, bookmarks, searchHistory) => {
-    const res = await fetch("https://resurface-si7m.onrender.com/compare-pages", {
+    const res = await fetch(`${BACKEND_URL}/compare-pages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -28,7 +30,7 @@ export const compareEmbeddingResponse = async (embedding, bookmarks, searchHisto
 export const fetchGeneratedPageData = async () => {
     // Since the URL in fetch is a POST req, specify that it is a post request
     // that you're fetching
-    const res = await fetch("https://resurface-si7m.onrender.com/process-page", {
+    const res = await fetch(`${BACKEND_URL}/process-page`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -42,23 +44,27 @@ export const fetchGeneratedPageData = async () => {
 }
 
 export const fetchUncachedEmbeddings = async (uncachedItems) => {
-    const res = await fetch("https://resurface-si7m.onrender.com/embed-uncached", {
+    const res = await fetch(`${BACKEND_URL}/embed-uncached`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
         },
         body: JSON.stringify({ uncached_items: uncachedItems })
-    })
+    });
+
+    const data = await res.json();
+    return data;
 }
 
 export const fetchPageReasoningData = async (summary, embedding) => {
+    // get the current tab
+    const currentUrl = (await chrome.tabs.query({ active : true, currentWindow: true }))[0].url;
     // Fetch bookmarks
     const rawBookmarks = await chrome.bookmarks.getRecent(50);
     // Fetch recent history
-    const rawHistory = await chrome.history.search({ text: "", maxResults: 50 });
+    const rawHistory = await chrome.history.search({ text: "", maxResults: 200 });
 
-
-    const allItems = [...rawBookmarks, ...rawHistory];
+    const allItems = [...rawBookmarks, ...rawHistory].filter(item => item.url != currentUrl);
     const cacheKeys = allItems.map(item => `embed${item.url}`);
 
     // cachedResults[i] is the i-th cache result for allItems[i]
@@ -102,7 +108,7 @@ export const fetchPageReasoningData = async (summary, embedding) => {
     const scored = allCachesCombined.map((item, i) => ({ score: score[i], item }));
     const top20 = scored.sort((a, b) => b.score - a.score).slice(0, 20);
 
-    const res = await fetch("https://resurface-si7m.onrender.com/page-reasoning", {
+    const res = await fetch(`${BACKEND_URL}/page-reasoning`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ summary, top_items: top20.map((x) => x.item) }),
@@ -177,8 +183,7 @@ export const renderRelativePageData = (recommendations, container) => {
     <ul class="">
         ${
             recommendations.length > 0 ? 
-            recommendations.slice(0,3)
-                .map(page => {
+            recommendations.map(page => {
                     const trimmedName = page.title && page.title.length > 20 
                         ? page.title.slice(0, 17) + "..." 
                         : page.title;

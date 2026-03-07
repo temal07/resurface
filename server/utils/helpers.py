@@ -15,3 +15,7 @@ def cosine_similarity(a: List[float], b: List[float]) -> float:
 def extract_url(url: str) -> str:
     cleaned = re.sub(r'https?://(www\.)?|\.com|\.net|\.edu|\.org|\.io', '', url)
     return re.sub(r'[/\-_]', ' ', cleaned).strip()
+
+
+def list_chunker(lst, chunk_size) -> list: 
+    return [lst[i: i+ chunk_size] for i in range(0, len(lst), chunk_size)]

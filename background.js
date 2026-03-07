@@ -29,7 +29,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
         try {
             // Call the process-page endpoint to generate the embedding and summary, then cache the embedding
-            const res = await fetch("http://localhost:8000/process-page", {
+            const res = await fetch("https://resurface-si7m.onrender.com/process-page", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -57,7 +57,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
             console.log("Cached embedding for:", tab.url);
         } catch(error) {
-            console.warn("Background embedding failed:", err);
+            console.warn("Background embedding failed:", error);
         }
 
         console.log("Page meaning extracted:", response);

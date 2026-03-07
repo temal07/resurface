@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 import os
 from google import genai
 from typing import List, Optional, Union
-from utils.helpers import cosine_similarity, extract_url
+from utils.helpers import cosine_similarity, extract_url, list_chunker
 
 load_dotenv()
 
@@ -263,9 +263,18 @@ def compare_pages(req: CompareRequest):
 @app.post("/embed-uncached", response_model=List[List[float]])
 def embed_uncached(req: EmbedItemsRequest):
     # Create embeddings for uncached item
-    embed_response = client.models.embed_content(
-        model="gemini-embedding-001",
-        contents=[f"{item.title} {extract_url(item.url)}" for item in req.uncached_items],
-    )
+    # Chunks the list of uncached embeddings since Gemini can only accept a maximum of 100 items
+    # for each call.
 
-    return [e.values for e in embed_response.embeddings]
+    chunked_list = list_chunker(req.uncached_items, 100)
+    accumulated_chunks = []
+
+    for chunked_items in chunked_list:
+        embed_response = client.models.embed_content(
+            model="gemini-embedding-001",
+            contents=[f"{item.title} {extract_url(item.url)}" for item in chunked_items],
+        )
+
+        accumulated_chunks.extend([e.values for e in embed_response.embeddings])
+
+    return accumulated_chunks
