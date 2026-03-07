@@ -9,6 +9,8 @@ export const pageData = {
     body: "",
 }
 
+import { cosineSimilarity } from "./helpers";
+
 export const compareEmbeddingResponse = async (embedding, bookmarks, searchHistory) => {
     const res = await fetch("https://resurface-si7m.onrender.com/compare-pages", {
         method: "POST",
@@ -39,29 +41,24 @@ export const fetchGeneratedPageData = async () => {
     return data;
 }
 
+export const fetchUncachedEmbeddings = async (uncachedItems) => {
+    const res = await fetch("https://resurface-si7m.onrender.com/embed-uncached", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ uncached_items: uncachedItems })
+    })
+}
+
 export const fetchPageReasoningData = async (summary, embedding) => {
     // Fetch bookmarks
     const rawBookmarks = await chrome.bookmarks.getRecent(50);
-    const bookmarks = rawBookmarks
-        .filter(b => b.url)
-        .map(b => ({
-            url: b.url,
-            title: b.title || "",
-            summary: "",
-        }));
-
     // Fetch recent history
     const rawHistory = await chrome.history.search({ text: "", maxResults: 50 });
-    const history = rawHistory
-        .filter(h => h.url)
-        .map(h => ({
-            url: h.url,
-            title: h.title || "",
-            summary: "",
-            timestamp: h.lastVisitTime?.toString() || null,
-        }));
 
-    const allItems = [...rawBookmarks, rawHistory];
+
+    const allItems = [...rawBookmarks, ...rawHistory];
     const cacheKeys = allItems.map(item => `embed${item.url}`);
 
     // cachedResults[i] is the i-th cache result for allItems[i]
@@ -73,10 +70,42 @@ export const fetchPageReasoningData = async (summary, embedding) => {
     const areNotCached = allItems.filter((item, i) => !cachedResults[i][`embed${item.url}`]);
     const areCached = allItems.filter((item, i) => cachedResults[i][`embed${item.url}`]);
 
+    // Combine the caches
+    const allCachesCombined = [...areCached, ...areNotCached];
+
+    // Generate fresh embeddings from the backend.
+    const uncachedEmbeddings = await fetchUncachedEmbeddings(areNotCached);
+
+    // Caching the uncached url's one-by-one using for each and setting the `embed${url}` to the i-th position of 
+    // uncachedEmbeddings generated from the backend
+    
+    areNotCached.forEach((item, i) => {
+        chrome.storage.local.set({ [`embed${item.url}`]: uncachedEmbeddings[i] });
+    });
+
+    // Pull cached embeddings from storage (chrome.storage.local.get() is async, so use Promise.all())
+
+    const cachedEmbeddings = await Promise.all(
+        areCached.map(async item => {
+            const result = await chrome.storage.local.get(`embed${item.url}`);
+            return result[`embed${item.url}`];
+        })
+    );
+
+    const allEmbeddings = [...cachedEmbeddings, ...uncachedEmbeddings];
+
+    const score = [];
+    for (let i = 0; i < allEmbeddings.length; i++) {
+        score.push(cosineSimilarity(embedding, allEmbeddings[i]));
+    }
+
+    const scored = allCachesCombined.map((item, i) => ({ score: score[i], item }));
+    const top20 = scored.sort((a, b) => b.score - a.score).slice(0, 20);
+
     const res = await fetch("https://resurface-si7m.onrender.com/page-reasoning", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ summary, embedding, uncached_items: areNotCached }),
+        body: JSON.stringify({ summary, top_items: top20.map((x) => x.item) }),
     });
 
     const data = await res.json();

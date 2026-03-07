@@ -186,12 +186,6 @@ def page_reasoning(req: PageReasoningRequest):
         [f"- [{item.title}]({item.url})" for item in req.top_items]
     )
 
-    # Extract the URL and store the meaningful chunks into a list along with the title for both the bookmarks and history items
-    items = [{"title": i.title, "extracted_url": extract_url(i.url), "original_url": i.url} for i in req.top_items]
-
-    # put each embedding from bookmarks and history together into a list
-    contents = [f"{item['title']} {item['extracted_url']}" for item in items]
-
     prompt = f"""
         You are a relevance ranking system for a browser extension.
 
