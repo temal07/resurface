@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 import os
 from google import genai
 from typing import List, Optional, Union
-
+from utils.helpers import cosine_similarity, extract_url
 
 load_dotenv()
 
@@ -54,15 +54,21 @@ class SearchHistoryItem(BaseModel):
     query: Optional[str] = None
 
 
+class PageItem(BaseModel):
+    title: str
+    url: str
+
+
 class PageReasoningRequest(BaseModel):
     summary: str
-    bookmarks: List[BookmarkItem]
-    history: List[SearchHistoryItem]
+    top_items: List[PageItem]
+
 
 class RankedPage(BaseModel):
     url: str
     title: str
     reason: str
+
 
 class PageReasoningResponse(BaseModel):
     pages: List[RankedPage]
@@ -73,13 +79,20 @@ class CompareRequest(BaseModel):
     bookmarks: List[BookmarkItem]
     history: List[SearchHistoryItem]
 
+
 class ScoredPage(BaseModel):
     url: str
     title: str
     score: float
 
+
 class CompareResponse(BaseModel):
     pages: List[ScoredPage]
+
+
+class EmbedItemsRequest(BaseModel):
+    uncached_items: List[PageItem]
+
 
 # -------- Routes --------
 
@@ -169,13 +182,15 @@ def process_page(req: PageDataRequest):
 @app.post("/page-reasoning", response_model=PageReasoningResponse)
 def page_reasoning(req: PageReasoningRequest):
 
-    bookmarks_text = "\n".join(
-        [f"- [{b.title}]({b.url})" for b in req.bookmarks]
-    ) or "None"
+    page_items_text = "\n".join(
+        [f"- [{item.title}]({item.url})" for item in req.top_items]
+    )
 
-    history_text = "\n".join(
-        [f"- [{h.title}]({h.url})" for h in req.history]
-    ) or "None"
+    # Extract the URL and store the meaningful chunks into a list along with the title for both the bookmarks and history items
+    items = [{"title": i.title, "extracted_url": extract_url(i.url), "original_url": i.url} for i in req.top_items]
+
+    # put each embedding from bookmarks and history together into a list
+    contents = [f"{item['title']} {item['extracted_url']}" for item in items]
 
     prompt = f"""
         You are a relevance ranking system for a browser extension.
@@ -183,13 +198,8 @@ def page_reasoning(req: PageReasoningRequest):
         The user is currently on a page with this intent:
         {req.summary}
 
-        Below are the user's bookmarks and recent history. Return the top 3 most relevant pages.
-
-        BOOKMARKS:
-        {bookmarks_text}
-
-        RECENT HISTORY:
-        {history_text}
+        Below are the relevant_pages:
+        {page_items_text}
 
         OUTPUT FORMAT (strict JSON, no markdown fences):
         {{
@@ -218,15 +228,6 @@ def page_reasoning(req: PageReasoningRequest):
 
     return reasoning
 
-
-# helper func
-def cosine_similarity(a: List[float], b: List[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
-    mag_a = math.sqrt(sum(x * x for x in a))
-    mag_b = math.sqrt(sum(x * x for x in b))
-    if mag_a == 0 or mag_b == 0:
-        return 0.0
-    return dot / (mag_a * mag_b)
 
 @app.post("/compare-pages", response_model=CompareResponse)
 def compare_pages(req: CompareRequest):
@@ -263,3 +264,14 @@ def compare_pages(req: CompareRequest):
     top = sorted(scored, key=lambda x: x["score"], reverse=True)[:5]
 
     return {"pages": top}
+
+
+@app.post("/embed-uncached", response_model=List[List[float]])
+def embed_uncached(req: EmbedItemsRequest):
+    # Create embeddings for uncached item
+    embed_response = client.models.embed_content(
+        model="gemini-embedding-001",
+        contents=[f"{item.title} {extract_url(item.url)}" for item in req.uncached_items],
+    )
+
+    return [e.values for e in embed_response.embeddings]

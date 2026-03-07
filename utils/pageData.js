@@ -10,7 +10,7 @@ export const pageData = {
 }
 
 export const compareEmbeddingResponse = async (embedding, bookmarks, searchHistory) => {
-    const res = await fetch("http://localhost:8000/compare-pages", {
+    const res = await fetch("https://resurface-si7m.onrender.com/compare-pages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -26,7 +26,7 @@ export const compareEmbeddingResponse = async (embedding, bookmarks, searchHisto
 export const fetchGeneratedPageData = async () => {
     // Since the URL in fetch is a POST req, specify that it is a post request
     // that you're fetching
-    const res = await fetch("http://localhost:8000/process-page", {
+    const res = await fetch("https://resurface-si7m.onrender.com/process-page", {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -39,7 +39,7 @@ export const fetchGeneratedPageData = async () => {
     return data;
 }
 
-export const fetchPageReasoningData = async (summary) => {
+export const fetchPageReasoningData = async (summary, embedding) => {
     // Fetch bookmarks
     const rawBookmarks = await chrome.bookmarks.getRecent(50);
     const bookmarks = rawBookmarks
@@ -61,10 +61,22 @@ export const fetchPageReasoningData = async (summary) => {
             timestamp: h.lastVisitTime?.toString() || null,
         }));
 
-    const res = await fetch("http://localhost:8000/page-reasoning", {
+    const allItems = [...rawBookmarks, rawHistory];
+    const cacheKeys = allItems.map(item => `embed${item.url}`);
+
+    // cachedResults[i] is the i-th cache result for allItems[i]
+    const cachedResults = await Promise.all(
+        cacheKeys.map(key => chrome.storage.local.get(key))
+    );
+
+    // Separate the cachedResults into 2 lists, traverse through allItems, not the cachedResults
+    const areNotCached = allItems.filter((item, i) => !cachedResults[i][`embed${item.url}`]);
+    const areCached = allItems.filter((item, i) => cachedResults[i][`embed${item.url}`]);
+
+    const res = await fetch("https://resurface-si7m.onrender.com/page-reasoning", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ summary, bookmarks, history }),
+        body: JSON.stringify({ summary, embedding, uncached_items: areNotCached }),
     });
 
     const data = await res.json();

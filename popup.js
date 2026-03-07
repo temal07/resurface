@@ -47,34 +47,36 @@ const init = async () => {
         let finalResults;
 
         try {
-            // Primary: embedding-based similarity
-            const compareData = await compareEmbeddingResponse(
-                generatedPageData.embedding,
-                bookmarks,
-                searchHistory
-            );
-            console.log("Compare Data: ", compareData);
-            finalResults = compareData.pages.map(page => ({
+            // Primary: Gemini ranking
+            // embedding caching implementation
+
+            const recommendations = await fetchPageReasoningData(generatedPageData.summary, generatedPageData.embedding);
+            console.log(recommendations);
+            finalResults = recommendations.pages.map(page => ({
                 url: page.url,
                 title: page.title,
                 favIcon: getFavIconFromPage(page.url),
-                score: page.score,
+                reason: page.reason,
+                score: 1,
             }));
-            console.log("FINAL RESULTS COME FROM EMBEDDINGS!");
+            console.log("FINAL RESULTS COME FROM GEMINI-GENERATED SUMMARY!");
         } catch (err) {
             console.warn("Embedding comparison failed, trying Gemini ranking", err);
             try {
-                // Secondary: Gemini ranking
-                const recommendations = await fetchPageReasoningData(generatedPageData.summary);
-                console.log(recommendations);
-                finalResults = recommendations.pages.map(page => ({
+                // Secondary: Embedding-based similarity
+                const compareData = await compareEmbeddingResponse(
+                    generatedPageData.embedding,
+                    bookmarks,
+                    searchHistory
+                );
+                console.log("Compare Data: ", compareData);
+                finalResults = compareData.pages.map(page => ({
                     url: page.url,
                     title: page.title,
                     favIcon: getFavIconFromPage(page.url),
-                    reason: page.reason,
-                    score: 1,
+                    score: page.score,
                 }));
-                console.log("FINAL RESULTS COME FROM GEMINI-GENERATED SUMMARY!");
+                console.log("FINAL RESULTS COME FROM EMBEDDINGS!");
             } catch (err2) {
                 console.warn("Gemini ranking failed, falling back to local TF-IDF", err2);
                 // Fallback: local cosine similarity on summary
