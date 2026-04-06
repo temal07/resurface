@@ -40,6 +40,10 @@ export const fetchGeneratedPageData = async () => {
 
     const data = await res.json();
 
+    if (data.summary === "INSUFFICIENT_CONTEXT") {
+        throw new Error("Gemini Summary Failed: Falling Back on Embeddings...");
+    }
+
     return data;
 }
 

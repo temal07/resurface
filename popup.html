@@ -9,17 +9,31 @@
 <body class="w-[400px] h-auto bg-white">
     <script type="module" src="popup.js" defer></script>
     <div class="flex flex-col rounded-lg shadow-lg bg-gradient-to-r from-blue-100 via-purple-100 to-pink-100 p-4">
+        <!-- display the current page content here -->
         <div class="">
             <h1 class="text-lg font-semibold text-gray-800">Current Page Content:</h1>
             <div id="page-container">
             
             </div>
         </div>
-        <div class="">
-            <h1 class="text-lg font-semibold text-gray-800">You've been here before:</h1>
-            <div id="relevant-pages-container">
-
-            </div>           
+        <!-- design a prompt bar here -->
+        <div class="flex flex-col gap-2 py-2">
+            <input type="text" placeholder="Suggest me pages about..." class="w-full p-2 rounded-md border border-gray-300" id="prompt-input">
+            <div class="flex flex-row gap-2">                
+                <button class="flex-1 min-w-0 bg-gradient-to-r from-blue-500 via-blue-400 to-blue-300 text-white p-2 px-6 rounded-md transition-colors duration-300 hover:from-blue-600 hover:via-blue-500 hover:to-blue-400 cursor-pointer" id="prompt-button">Suggest Pages</button>
+                <button title="Inspect this page" class="flex items-center justify-center rounded-md border border-gray-300 bg-white hover:bg-gray-100 transition-colors w-10 h-10 cursor-pointer" id="inspect-button">
+                    <!-- Inspect (magnifying glass) icon SVG -->
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" fill="none"/>
+                        <line x1="16.65" y1="16.65" x2="21" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
+            <!-- display the relevant pages here -->
+            <div class="py-2">
+                <h1 class="text-lg font-semibold text-gray-800">You've been here before:</h1>
+                <div id="relevant-pages-container"></div>           
+            </div>
         </div>
     </div>
 </body>
