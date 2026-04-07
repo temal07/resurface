@@ -11,96 +11,92 @@ import { getBookmarkedPages, getSearchHistory, comparePages } from "./utils/page
 
 const container = document.getElementById("page-container");
 const relatedPageContainer = document.getElementById("relevant-pages-container");
+const inspectButton = document.getElementById("inspect-button");
 
-const init = async () => {
-    const tab = await getActiveTab();
-    const bookmarks = await getBookmarkedPages();
-    const searchHistory = await getSearchHistory();
+let isInspectionInFlight = false;
 
-    const pageMeaning = await getPageMeaning(tab.id);
+const runInspection = async () => {
+    if (isInspectionInFlight) {
+        return;
+    }
 
-    // Update the page data with the page meaning
-    updatePageData({ 
-        id: tab.id, 
-        name: tab.title, 
-        url: tab.url, 
-        favIcon: tab.favIconUrl, 
-        description: pageMeaning.description,
-        body: pageMeaning.body,
-    });
+    isInspectionInFlight = true;
+    inspectButton.disabled = true;
+    inspectButton.classList.add("opacity-60", "cursor-not-allowed");
+    relatedPageContainer.innerHTML = `<p class="text-gray-500 py-2">Inspecting this page...</p>`;
 
-    // Render the page data to the container before fetching the relevant pages from the backend
-    renderPageData(pageData, container); // This is the page the user is on
-    /* /////// RELEVANT PAGES LOGIC /////// */
-    /* 
-                try {
-            // Check if the embedding is cached
-            const cacheKey = `embed:${tab.url}`;
-            const cached = await chrome.storage.local.get(cacheKey);
+    try {
+        const tab = await getActiveTab();
+        const bookmarks = await getBookmarkedPages();
+        const searchHistory = await getSearchHistory();
+        const pageMeaning = await getPageMeaning(tab.id);
 
-            // If the embedding is cached, use it, otherwise fetch it from the backend
-            let generatedPageData = cached[cacheKey] || null;
+        // Update the page data with the current tab + content script extraction.
+        updatePageData({
+            id: tab.id,
+            name: tab.title,
+            url: tab.url,
+            favIcon: tab.favIconUrl,
+            description: pageMeaning.description,
+            body: pageMeaning.body,
+        });
+        renderPageData(pageData, container);
 
-            if (!generatedPageData) {
-                try {
-                    generatedPageData = await fetchGeneratedPageData();
-                    // Cache it for next time
-                    await chrome.storage.local.set({ [cacheKey]: generatedPageData });
-                } catch (err) {
-                    console.warn("Process page failed, proceeding without embedding", err);
-                    generatedPageData = { summary: null, embedding: null };
-                }
-            }
-            let finalResults;
+        // Preserve ranking pipeline:
+        // 1) backend reasoning from generated summary
+        // 2) embedding comparison
+        // 3) local similarity fallback over bookmarks/history
+        let generatedPageData;
+        try {
+            generatedPageData = await fetchGeneratedPageData();
+        } catch (err) {
+            console.warn("Process page failed, proceeding without embedding", err);
+            generatedPageData = { summary: null, embedding: null };
+        }
 
+        let finalResults;
+        try {
+            const recommendations = await fetchPageReasoningData(generatedPageData.summary, generatedPageData.embedding);
+            finalResults = recommendations.pages.map((page) => ({
+                url: page.url,
+                title: page.title,
+                favIcon: getFavIconFromPage(page.url),
+                reason: page.reason,
+                score: 1,
+            }));
+            console.log("FINAL RESULTS COME FROM GEMINI-GENERATED SUMMARY!");
+        } catch (err) {
+            console.warn("Gemini Summary Failed: Trying Embeddings...", err);
             try {
-                // Primary: Gemini ranking
-                // embedding caching implementation
-
-                const recommendations = await fetchPageReasoningData(generatedPageData.summary, generatedPageData.embedding);
-                console.log(recommendations);
-                finalResults = recommendations.pages.map(page => ({
+                const compareData = await compareEmbeddingResponse(
+                    generatedPageData.embedding,
+                    bookmarks,
+                    searchHistory
+                );
+                finalResults = compareData.pages.map((page) => ({
                     url: page.url,
                     title: page.title,
                     favIcon: getFavIconFromPage(page.url),
-                    reason: page.reason,
-                    score: 1,
+                    score: page.score,
                 }));
-                console.log("FINAL RESULTS COME FROM GEMINI-GENERATED SUMMARY!");
-            } catch (err) {
-                console.warn("Gemini Summary Failed: Trying Embeddings...", err);
-                try {
-                    // Secondary: Embedding-based similarity
-                    const compareData = await compareEmbeddingResponse(
-                        generatedPageData.embedding,
-                        bookmarks,
-                        searchHistory
-                    );
-                    console.log("Compare Data: ", compareData);
-                    finalResults = compareData.pages.map(page => ({
-                        url: page.url,
-                        title: page.title,
-                        favIcon: getFavIconFromPage(page.url),
-                        score: page.score,
-                    }));
-                    console.log("FINAL RESULTS COME FROM EMBEDDINGS!");
-                } catch (err2) {
-                    console.warn("Embeddings Failed: Trying Local TF-IDF + COSINE SIM...", err2);
-                    // Fallback: local cosine similarity on summary
-                    finalResults = comparePages(pageData, bookmarks, searchHistory, generatedPageData.summary);
-                    console.log("FINAL RESULTS COME FROM LOCAL TF-IDF + COSINE SIM!");
-                }
+                console.log("FINAL RESULTS COME FROM EMBEDDINGS!");
+            } catch (err2) {
+                console.warn("Embeddings Failed: Trying Local TF-IDF + COSINE SIM...", err2);
+                finalResults = comparePages(pageData, bookmarks, searchHistory, generatedPageData.summary);
+                console.log("FINAL RESULTS COME FROM LOCAL TF-IDF + COSINE SIM!");
             }
+        }
 
-            console.log("Generated Page Data:", generatedPageData);
-            console.log("Final Results:", finalResults);
-
-            renderRelativePageData(finalResults, relatedPageContainer);
-        } catch (err) {
-            console.error(err);
-            container.innerHTML = `<span class="text-red-500">Failed to load page info</span>`;
-        }    
-    */
+        renderRelativePageData(finalResults, relatedPageContainer);
+    } catch (err) {
+        console.error(err);
+        container.innerHTML = `<span class="text-red-500">Failed to load page info</span>`;
+        relatedPageContainer.innerHTML = `<span class="text-red-500">Failed to load related pages</span>`;
+    } finally {
+        isInspectionInFlight = false;
+        inspectButton.disabled = false;
+        inspectButton.classList.remove("opacity-60", "cursor-not-allowed");
+    }
 };
 
-init();
+inspectButton.addEventListener("click", runInspection);
