@@ -2,6 +2,8 @@
 // You cannot directly "import" extractPageMeaning from content.js in your background/service worker script;
 // background.js and content.js run in separate contexts in a Chrome extension, so sharing functions directly is not possible.
 
+import { BACKEND_URL } from "./utils/constants.js";
+
 // Instead, you should send a message from background.js to content.js,
 // and have content.js respond by running extractPageMeaning and returning (sending) the result.
 
@@ -29,7 +31,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
         try {
             // Call the process-page endpoint to generate the embedding and summary, then cache the embedding
-            const res = await fetch("https://resurface-si7m.onrender.com/process-page", {
+            const res = await fetch(`${BACKEND_URL}/process-page`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

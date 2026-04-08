@@ -1,5 +1,9 @@
 // Handles everything related to the page the user is on.
 
+import { cosineSimilarity } from "./helpers.js";
+import { BACKEND_URL } from "./constants.js";
+import { getBookmarkedPages, getSearchHistory } from "./pageRelevance.js";
+
 export const pageData = {
     id: "",
     name: "",
@@ -8,10 +12,6 @@ export const pageData = {
     description: "",
     body: "",
 }
-
-import { cosineSimilarity } from "./helpers.js";
-import { BACKEND_URL } from "./constants.js";
-
 
 export const compareEmbeddingResponse = async (embedding, bookmarks, searchHistory) => {
     const res = await fetch(`${BACKEND_URL}/compare-pages`, {
@@ -60,67 +60,62 @@ export const fetchUncachedEmbeddings = async (uncachedItems) => {
     return data;
 }
 
-export const fetchPageReasoningData = async (summary, embedding) => {
-    // get the current tab
-    const currentUrl = (await chrome.tabs.query({ active : true, currentWindow: true }))[0].url;
-    // Fetch bookmarks
-    const rawBookmarks = await chrome.bookmarks.getRecent(50);
-    // Fetch recent history
-    const rawHistory = await chrome.history.search({ text: "", maxResults: 200 });
+export const fetchPageReasoningData = async (inputQuery, embedding) => {
+    const currentUrl = (await chrome.tabs.query({ active: true, currentWindow: true }))[0].url;
+
+    const rawBookmarks = await getBookmarkedPages();
+    const rawHistory = await getSearchHistory();
 
     const allItems = [...rawBookmarks, ...rawHistory].filter(item => item.url != currentUrl);
     const cacheKeys = allItems.map(item => `embed${item.url}`);
 
-    // cachedResults[i] is the i-th cache result for allItems[i]
     const cachedResults = await Promise.all(
         cacheKeys.map(key => chrome.storage.local.get(key))
     );
 
-    // Separate the cachedResults into 2 lists, traverse through allItems, not the cachedResults
     const areNotCached = allItems.filter((item, i) => !cachedResults[i][`embed${item.url}`]);
     const areCached = allItems.filter((item, i) => cachedResults[i][`embed${item.url}`]);
-
-    // Combine the caches
     const allCachesCombined = [...areCached, ...areNotCached];
 
-    // Generate fresh embeddings from the backend.
-    const uncachedEmbeddings = await fetchUncachedEmbeddings(areNotCached);
+    if (embedding) {
+        const uncachedEmbeddings = await fetchUncachedEmbeddings(areNotCached);
 
-    // Caching the uncached url's one-by-one using for each and setting the `embed${url}` to the i-th position of 
-    // uncachedEmbeddings generated from the backend
+        areNotCached.forEach((item, i) => {
+            chrome.storage.local.set({ [`embed${item.url}`]: uncachedEmbeddings[i] });
+        });
+
+        const cachedEmbeddings = await Promise.all(
+            areCached.map(async item => {
+                const result = await chrome.storage.local.get(`embed${item.url}`);
+                return result[`embed${item.url}`];
+            })
+        );
+
+        const allEmbeddings = [...cachedEmbeddings, ...uncachedEmbeddings];
+
+        const score = allEmbeddings.map(e => cosineSimilarity(embedding, e));
+        const scored = allCachesCombined.map((item, i) => ({ score: score[i], item }));
+        const top20 = scored.sort((a, b) => b.score - a.score).slice(0, 20);
+
+        const res = await fetch(`${BACKEND_URL}/page-reasoning`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ summary: inputQuery, top_items: top20.map((x) => x.item) }),
+        });
+
+        return await res.json();
+
+    } else {
+        const res = await fetch(`${BACKEND_URL}/page-reasoning`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ summary: inputQuery, top_items: allCachesCombined.map(item => item) }),
+        });
     
-    areNotCached.forEach((item, i) => {
-        chrome.storage.local.set({ [`embed${item.url}`]: uncachedEmbeddings[i] });
-    });
-
-    // Pull cached embeddings from storage (chrome.storage.local.get() is async, so use Promise.all())
-
-    const cachedEmbeddings = await Promise.all(
-        areCached.map(async item => {
-            const result = await chrome.storage.local.get(`embed${item.url}`);
-            return result[`embed${item.url}`];
-        })
-    );
-
-    const allEmbeddings = [...cachedEmbeddings, ...uncachedEmbeddings];
-
-    const score = [];
-    for (let i = 0; i < allEmbeddings.length; i++) {
-        score.push(cosineSimilarity(embedding, allEmbeddings[i]));
+        return await res.json();
     }
+};
 
-    const scored = allCachesCombined.map((item, i) => ({ score: score[i], item }));
-    const top20 = scored.sort((a, b) => b.score - a.score).slice(0, 20);
-
-    const res = await fetch(`${BACKEND_URL}/page-reasoning`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ summary, top_items: top20.map((x) => x.item) }),
-    });
-
-    const data = await res.json();
-    return data;
-}
 
 export const extractWordsFromUrl = (url) => {
     try {
@@ -230,3 +225,4 @@ export const getFavIconFromPage = (url) => {
         return "https://www.google.com/s2/favicons?sz=64&domain=example.com";
     }
 }
+
