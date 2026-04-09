@@ -1,5 +1,4 @@
 import json
-import math
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -201,13 +200,15 @@ def page_reasoning(req: PageReasoningRequest):
                 {{"url": "...", "title": "...", "reason": "one sentence why it's relevant"}},
                 ...
             ]
+            "reason": "brief phrase (5-8 words) explaining why nothing matched, or null if pages is not empty"
         }}
 
         Rules:
         - Only return pages from the lists above. Do NOT invent URLs.
         - Do NOT return the current page. The current page is seen by the user and is not relevant to the user's intent.
         - Return at most 5 pages. Do NOT pad with weak results just to reach 5. 
-        - If nothing is relevant, return an empty list.
+        - If nothing is relevant, return an empty pages list and fill the reason field with a specific brief phrase explanation — NOT generic. Reference the user's actual intent and why the available pages don't match it.
+        - NEVER return an empty pages list without a "reason" field. If pages is empty, "reason" is REQUIRED (Example: when nothing matches: {{"pages": [], "reason": "No ML resources in your history"}})
         """
 
     try:

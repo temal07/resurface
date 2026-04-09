@@ -209,7 +209,7 @@ export const renderRelativePageData = (recommendations, container) => {
                     `;
                 }).join('') : `
                 <li class="flex items-center gap-2 py-2 px-2 rounded-md">
-                    <p class="text-gray-400">No results found</p>
+                    <p class="text-gray-400">No matched results with the page/prompt.</p>
                 </li>
                 `
         }
