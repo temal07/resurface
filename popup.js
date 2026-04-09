@@ -163,6 +163,37 @@ const init = async () => {
 
     // Gets the current page's info along with bookmarks and search histories. 
     const tab = await getActiveTab();
+    if (tab.url.startsWith("chrome://")) {
+    // INSERT_YOUR_CODE
+    // Show a warning message if the current page is a chrome:// page
+    const warning = document.createElement("div");
+    warning.style.background = "#FFF3CD";
+    warning.style.color = "#856404";
+    warning.style.padding = "12px";
+    warning.style.margin = "12px 0";
+    warning.style.border = "1px solid #ffeeba";
+    warning.style.borderRadius = "4px";
+    warning.style.fontSize = "14px";
+    warning.style.fontWeight = "500";
+    warning.style.display = "flex";
+    warning.style.alignItems = "center";
+    warning.innerHTML = `
+        <svg height="18" viewBox="0 0 24 24" width="18" style="margin-right: 8px;min-width:18px" fill="#856404">
+          <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+        </svg>
+        <span>Resurface doesn&apos;t work for Chrome system pages like <b>chrome://</b>. Try another webpage!</span>
+    `;
+
+    // Find the "Current Page Content" display, and insert after it
+    const currentPageEl = document.querySelector("#page-content") || container; // adjust selector as needed
+    if (currentPageEl && currentPageEl.parentNode) {
+        currentPageEl.parentNode.insertBefore(warning, currentPageEl.nextSibling);
+    } else {
+        // fallback: just append to main container
+        container.appendChild(warning);
+    }
+    }
+
     const [bookmarks, searchHistory] = await Promise.all([getBookmarkedPages(), getSearchHistory()]);
     const pageMeaning = await getPageMeaning(tab.id);
 
