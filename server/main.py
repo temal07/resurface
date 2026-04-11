@@ -93,6 +93,15 @@ class EmbedItemsRequest(BaseModel):
     uncached_items: List[PageItem]
 
 
+class PromptRequest(BaseModel):
+    prompt: str
+
+
+class ExpandedPromptResponse(BaseModel):
+    expanded_query: str
+    embeddings: List[float]
+
+
 # -------- Routes --------
 
 @app.get("/")
@@ -230,7 +239,7 @@ def compare_pages(req: CompareRequest):
     candidates = [
         {"url": b.url, "title": b.title} for b in req.bookmarks[:30]
     ] + [
-        {"url": h.url, "title": h.title} for h in req.history[:20]
+        {"url": h.url, "title": h.title} for h in req.history[:50]
     ]
 
     # Embed all candidates in one batch call
@@ -279,3 +288,41 @@ def embed_uncached(req: EmbedItemsRequest):
         accumulated_chunks.extend([e.values for e in embed_response.embeddings])
 
     return accumulated_chunks
+
+
+@app.post("/expand-prompt", response_model=ExpandedPromptResponse)
+def expand_prompt(req: PromptRequest):
+    # If the user types in something vague like 'recipes', 'anthropic docs', 'ts docs', etc. 
+    # this endpoint will expand that query into a richer query that contains user intent based on the words
+    # written
+
+    prompt = f"""
+        You are a a search query expander. Given a short user query, 
+        write 2-3 sentences describing what the user likely wants to 
+        find, including related topics, synonyms, and context. Be 
+        specific and semantic-rich.
+
+        The query is: {req.prompt}      
+    """
+
+    try:
+        prompt_res = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt
+        )
+        expanded_query = prompt_res.text.strip()
+
+        # generate embeddings for the expanded prompt
+
+        embed_resp = client.models.embed_content(
+            model="gemini-embedding-001",
+            contents=f"{expanded_query}",
+        )
+        embeddings = embed_resp.embeddings[0].values
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Expansion failed: {e}")
+
+    return {
+        "expanded_query": expanded_query,
+        "embeddings": embeddings,
+    }

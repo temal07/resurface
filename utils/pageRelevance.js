@@ -32,8 +32,6 @@ export const getBookmarkedPages = () => {
     });
 }
 
-let oneWeekAgo = new Date().getTime() - 7 * 24 * 60 * 60 * 1000;
-
 export const getSearchHistory = () => {
     return new Promise((resolve, reject) => {
         if (chrome.runtime.lastError) {
@@ -41,10 +39,12 @@ export const getSearchHistory = () => {
             return;
         }
 
+        const oneMonthAgo = new Date().getTime() - 30 * 24 * 60 * 60 * 1000;
+
         chrome.history.search({
             text: '',
-            startTime: oneWeekAgo,
-            maxResults: 100,
+            startTime: oneMonthAgo,
+            maxResults: 200,
         }, (historyItems) => {
             resolve(historyItems);
         });

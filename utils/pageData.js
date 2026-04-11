@@ -27,25 +27,16 @@ export const compareEmbeddingResponse = async (embedding, bookmarks, searchHisto
     return compareData;
 }
 
-export const fetchGeneratedPageData = async () => {
-    // Since the URL in fetch is a POST req, specify that it is a post request
-    // that you're fetching
-    const res = await fetch(`${BACKEND_URL}/process-page`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(pageData),
+export const fetchExpandedQuery = async (prompt) => {
+    const res = await fetch(`${BACKEND_URL}/expand-prompt`, {
+        method: "POST", 
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
     });
 
-    const data = await res.json();
-
-    if (data.summary === "INSUFFICIENT_CONTEXT") {
-        throw new Error("Gemini Summary Failed: Falling Back on Embeddings...");
-    }
-
-    return data;
+    return await res.json();
 }
+
 
 export const fetchUncachedEmbeddings = async (uncachedItems) => {
     const res = await fetch(`${BACKEND_URL}/embed-uncached`, {
@@ -100,7 +91,7 @@ export const fetchPageReasoningData = async (inputQuery, embedding) => {
         const res = await fetch(`${BACKEND_URL}/page-reasoning`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ summary: inputQuery, top_items: top20.map((x) => x.item) }),
+            body: JSON.stringify({ summary: inputQuery, top_items: top20.map((x) => ({ title: x.item.title, url: x.item.url })) }),
         });
 
         return await res.json();
@@ -109,7 +100,7 @@ export const fetchPageReasoningData = async (inputQuery, embedding) => {
         const res = await fetch(`${BACKEND_URL}/page-reasoning`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ summary: inputQuery, top_items: allCachesCombined.map(item => item) }),
+            body: JSON.stringify({ summary: inputQuery, top_items: allCachesCombined.slice(0,20).map(item => ({ title: item.title, url: item.url })) }),
         });
     
         return await res.json();

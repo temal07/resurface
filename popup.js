@@ -1,5 +1,5 @@
 import {
-    fetchGeneratedPageData,
+    fetchExpandedQuery,
     fetchPageReasoningData,
     compareEmbeddingResponse,
     renderPageData,
@@ -99,11 +99,29 @@ const runInspection = async (tab, bookmarks, searchHistory) => {
         let generatedPageData = cached[cacheKey] || null;
         console.log("Generated Page Data", generatedPageData);
 
+        // check for old cache formatting (raw array of embeds)
+        if (Array.isArray(generatedPageData)) {
+            generatedPageData = null;
+            await chrome.storage.local.remove(cacheKey);
+        }
+
+        // on-demand trigger on the page data instead of calling fetchGeneratedPageData()
         if (!generatedPageData) {
-            console.time("fetchGeneratedPageData");
-            generatedPageData = await fetchGeneratedPageData();
-            console.timeEnd("fetchGeneratedPageData");
-            await chrome.storage.local.set({ [cacheKey]: generatedPageData });
+            const pageResponse = await chrome.tabs.sendMessage(tab.id, { type: "EXTRACT_PAGE_MEANING" });
+            const res = await fetch(`${BACKEND_URL}/process-page`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    id: tab.id,
+                    name: tab.title || "",
+                    url: tab.url,
+                    favIcon: tab.favIconUrl || "",
+                    description: pageResponse.description || "",
+                    body: pageResponse.body || "",
+                }),
+            });
+            generatedPageData = await res.json();
+            await chrome.storage.local.set({ [cacheKey]: { ...generatedPageData, cachedAt: Date.now() } });
         }
         console.log("Gemini page summary:", generatedPageData.summary);
 
@@ -135,14 +153,17 @@ const runPromptInspection = async (bookmarks, searchHistory) => {
     setPromptState(true);
     renderInspectionLoading("Finding related pages based on your prompt...");
 
+    const { expanded_query, embeddings } = await fetchExpandedQuery(prompt);
+
+    console.log(expanded_query, embeddings);
     try {
         console.time("rankWithFallbacks (with prompt)");
         const finalResults = await rankWithFallbacks(
             null,
-            null,
+            embeddings,
             bookmarks,
             searchHistory,
-            prompt
+            expanded_query
         );
         console.timeEnd("rankWithFallbacks (with prompt)");
         console.log(finalResults);
@@ -164,34 +185,37 @@ const init = async () => {
     // Gets the current page's info along with bookmarks and search histories. 
     const tab = await getActiveTab();
     if (tab.url.startsWith("chrome://")) {
-    // INSERT_YOUR_CODE
-    // Show a warning message if the current page is a chrome:// page
-    const warning = document.createElement("div");
-    warning.style.background = "#FFF3CD";
-    warning.style.color = "#856404";
-    warning.style.padding = "12px";
-    warning.style.margin = "12px 0";
-    warning.style.border = "1px solid #ffeeba";
-    warning.style.borderRadius = "4px";
-    warning.style.fontSize = "14px";
-    warning.style.fontWeight = "500";
-    warning.style.display = "flex";
-    warning.style.alignItems = "center";
-    warning.innerHTML = `
-        <svg height="18" viewBox="0 0 24 24" width="18" style="margin-right: 8px;min-width:18px" fill="#856404">
-          <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
-        </svg>
-        <span>Resurface doesn&apos;t work for Chrome system pages like <b>chrome://</b>. Try another webpage!</span>
-    `;
+        // Show a warning message if the current page is a chrome:// page
+        const warning = document.createElement("div");
+        warning.style.background = "#FFF3CD";
+        warning.style.color = "#856404";
+        warning.style.padding = "12px";
+        warning.style.margin = "12px 0";
+        warning.style.border = "1px solid #ffeeba";
+        warning.style.borderRadius = "4px";
+        warning.style.fontSize = "14px";
+        warning.style.fontWeight = "500";
+        warning.style.display = "flex";
+        warning.style.alignItems = "center";
+        warning.innerHTML = `
+            <svg height="18" viewBox="0 0 24 24" width="18" style="margin-right: 8px;min-width:18px" fill="#856404">
+            <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+            </svg>
+            <span>Resurface doesn&apos;t work for Chrome system pages like <b>chrome://</b>. Try another webpage!</span>
+        `;
 
-    // Find the "Current Page Content" display, and insert after it
-    const currentPageEl = document.querySelector("#page-content") || container; // adjust selector as needed
-    if (currentPageEl && currentPageEl.parentNode) {
-        currentPageEl.parentNode.insertBefore(warning, currentPageEl.nextSibling);
-    } else {
-        // fallback: just append to main container
-        container.appendChild(warning);
-    }
+        // Find the "Current Page Content" display, and insert after it
+        const currentPageEl = document.querySelector("#page-content") || container; // adjust selector as needed
+        if (currentPageEl && currentPageEl.parentNode) {
+            currentPageEl.parentNode.insertBefore(warning, currentPageEl.nextSibling);
+        } else {
+            // fallback: just append to main container
+            container.appendChild(warning);
+        }
+        inspectButton.disabled = true;
+        inspectButton.classList.add("opacity-60", "cursor-not-allowed");
+        promptButton.disabled = true;
+        promptButton.classList.add("opacity-60", "cursor-not-allowed");
     }
 
     const [bookmarks, searchHistory] = await Promise.all([getBookmarkedPages(), getSearchHistory()]);
@@ -220,6 +244,7 @@ const init = async () => {
         promptInput.addEventListener("keydown", (event) => {
             if (event.key === "Enter") {
                 event.preventDefault();
+                console.log("prompt button entered"); 
                 runPromptInspection(bookmarks, searchHistory);
             }
         });
