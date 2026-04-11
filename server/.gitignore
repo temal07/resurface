@@ -2,4 +2,4 @@
 venv/
 __pycache__/
 ./tailwind.js
-./utils/constant.js
+./utils/constants.js
