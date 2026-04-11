@@ -283,6 +283,7 @@ def embed_uncached(req: EmbedItemsRequest):
         embed_response = client.models.embed_content(
             model="gemini-embedding-001",
             contents=[f"{item.title} {extract_url(item.url)}" for item in chunked_items],
+            config={"task_type": "RETRIEVAL_DOCUMENT"}
         )
 
         accumulated_chunks.extend([e.values for e in embed_response.embeddings])
@@ -317,6 +318,7 @@ def expand_prompt(req: PromptRequest):
         embed_resp = client.models.embed_content(
             model="gemini-embedding-001",
             contents=f"{expanded_query}",
+            config={"task_type": "RETRIEVAL_QUERY"}
         )
         embeddings = embed_resp.embeddings[0].values
     except Exception as e:
