@@ -78,7 +78,8 @@ export const fetchPageReasoningData = async (inputQuery, embedding) => {
         const cachedEmbeddings = await Promise.all(
             areCached.map(async item => {
                 const result = await chrome.storage.local.get(`embed${item.url}`);
-                return result[`embed${item.url}`];
+                const val = result[`embed${item.url}`];
+                return val?.embedding ?? val;
             })
         );
 
