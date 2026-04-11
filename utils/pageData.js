@@ -192,9 +192,9 @@ export const renderRelativePageData = (recommendations, container) => {
                             ${trimmedName}
                         </span>
                         <span class="text-gray-400 flex items-center ml-2">
-                            <a href="${page.url}" class="hover:text-blue-700 text-blue-400 truncate max-w-max inline-block align-middle" target="_blank" rel="noopener noreferrer">
+                            <button class="hover:text-blue-700 text-blue-400 truncate max-w-max inline-block align-middle open-tab-btn cursor-pointer" data-url="${page.url}">
                                 ${trimmedLink}
-                            </a>
+                            </button>
                         </span>
                     </li>
                     `;
@@ -206,6 +206,12 @@ export const renderRelativePageData = (recommendations, container) => {
         }
     </ul>
     `;
+
+    container.querySelectorAll(".open-tab-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            chrome.tabs.create({ url: btn.dataset.url, active: false });
+        });
+    });
 }
 
 export const getFavIconFromPage = (url) => {

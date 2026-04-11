@@ -176,6 +176,7 @@ def process_page(req: PageDataRequest):
         embed_resp = client.models.embed_content(
             model="gemini-embedding-001",
             contents=f"{req.name}\n{req.description}\n{summary}",
+            config={"task_type": "RETRIEVAL_DOCUMENT"}
         )
         embedding = embed_resp.embeddings[0].values
     except Exception as e:
