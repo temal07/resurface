@@ -10,7 +10,7 @@ from utils.helpers import cosine_similarity, extract_url, list_chunker
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from models import (
+from utils.models import (
     PageDataRequest,
     PageDataResponse,
     BookmarkItem,
