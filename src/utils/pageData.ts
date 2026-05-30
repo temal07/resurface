@@ -3,6 +3,7 @@
 import { cosineSimilarity } from "./helpers";
 import { BACKEND_URL } from "./constants";
 import { getBookmarkedPages, getSearchHistory } from "./pageRelevance";
+import { isCacheFresh } from "./config";
 import type {
   CandidateItem,
   CompareResponse,
@@ -83,8 +84,10 @@ export const fetchPageReasoningData = async (
 
   const cachedResults = await Promise.all(cacheKeys.map((key) => chrome.storage.local.get(key)));
 
-  const areNotCached = allItems.filter((item, i) => !cachedResults[i][`embed${item.url}`]);
-  const areCached = allItems.filter((item, i) => cachedResults[i][`embed${item.url}`]);
+  // Stale or malformed entries (no cachedAt, expired, or legacy raw arrays) are
+  // treated as uncached so they get re-embedded with a fresh, uniform shape.
+  const areNotCached = allItems.filter((item, i) => !isCacheFresh(cachedResults[i][`embed${item.url}`]));
+  const areCached = allItems.filter((item, i) => isCacheFresh(cachedResults[i][`embed${item.url}`]));
   const allCachesCombined = [...areCached, ...areNotCached];
 
   if (embedding) {
@@ -94,8 +97,12 @@ export const fetchPageReasoningData = async (
     }));
     const uncachedEmbeddings = await fetchUncachedEmbeddings(uncachedItems);
 
+    // Write the canonical CacheEntry shape ({ summary, embedding, cachedAt }) so
+    // every reader can rely on `.embedding` — matches what background.ts writes.
     areNotCached.forEach((item, i) => {
-      chrome.storage.local.set({ [`embed${item.url}`]: uncachedEmbeddings[i] });
+      chrome.storage.local.set({
+        [`embed${item.url}`]: { summary: "", embedding: uncachedEmbeddings[i], cachedAt: Date.now() },
+      });
     });
 
     const cachedEmbeddings = await Promise.all(

@@ -13,6 +13,7 @@ import {
 import { getBookmarkedPages, getSearchHistory, comparePages } from "../utils/pageRelevance";
 import { getActiveTab, getPageMeaning } from "../utils/helpers";
 import { BACKEND_URL } from "../utils/constants";
+import { TOP_N, isCacheFresh } from "../utils/config";
 import type { CacheEntry, PageMeaning, RankedPage } from "../types";
 
 const container = document.getElementById("page-container") as HTMLElement | null;
@@ -57,30 +58,41 @@ const rankWithFallbacks = async (
   // Either accepts a page summary or a prompt
   const inputQuery = summary || prompt;
 
+  // Tier 1 — LLM reasoning. Fall through on error OR on an empty result set
+  // (a 200 with no pages is still a failure for our purposes).
   try {
     const recommendations = await fetchPageReasoningData(inputQuery ?? "", embedding);
     console.log(recommendations);
-    return recommendations.pages.map((page) => ({
-      url: page.url,
-      title: page.title,
-      favIcon: getFavIconFromPage(page.url),
-      reason: page.reason,
-      score: 1,
-    }));
+    const pages = recommendations?.pages ?? [];
+    if (pages.length > 0) {
+      return pages.slice(0, TOP_N).map((page) => ({
+        url: page.url,
+        title: page.title,
+        favIcon: getFavIconFromPage(page.url),
+        reason: page.reason,
+        score: 1,
+      }));
+    }
+    console.warn("Reasoning returned no pages. Falling back to embedding compare.");
   } catch (reasoningError) {
     console.warn("Reasoning failed. Falling back to embedding compare.", reasoningError);
   }
 
+  // Tier 2 — server-side embedding compare. Same empty-result guard.
   if (embedding) {
     try {
       const compareData = await compareEmbeddingResponse(embedding, bookmarks, searchHistory);
       console.log(compareData);
-      return compareData.pages.map((page) => ({
-        url: page.url,
-        title: page.title,
-        favIcon: getFavIconFromPage(page.url),
-        score: page.score,
-      }));
+      const pages = compareData?.pages ?? [];
+      if (pages.length > 0) {
+        return pages.slice(0, TOP_N).map((page) => ({
+          url: page.url,
+          title: page.title,
+          favIcon: getFavIconFromPage(page.url),
+          score: page.score,
+        }));
+      }
+      console.warn("Embedding compare returned no pages. Falling back to local similarity.");
     } catch (embeddingError) {
       console.warn("Embedding compare failed. Falling back to local similarity.", embeddingError);
     }
@@ -88,6 +100,7 @@ const rankWithFallbacks = async (
     console.warn("No query embedding provided. Skipping embedding compare fallback.");
   }
 
+  // Tier 3 — fully local TF-IDF (already capped at TOP_N inside comparePages).
   return comparePages({ id: "prompt-or-inspect" }, bookmarks, searchHistory, inputQuery);
 };
 
@@ -109,8 +122,10 @@ const runInspection = async (
     let generatedPageData: CacheEntry | null = cached[cacheKey] || null;
     console.log("Generated Page Data", generatedPageData);
 
-    // check for old cache formatting (raw array of embeds)
-    if (Array.isArray(generatedPageData)) {
+    // Treat anything that isn't a fresh, well-formed CacheEntry as a miss. This
+    // covers legacy raw-array entries and expired embeddings (TTL), clearing
+    // them so they get regenerated below.
+    if (generatedPageData && !isCacheFresh(generatedPageData)) {
       generatedPageData = null;
       await chrome.storage.local.remove(cacheKey);
     }

@@ -1,5 +1,6 @@
-import { tokenise, vectorise, cosineSimilarity } from "./helpers";
+import { tokenise, cosineSimilarity, computeIdf, vectoriseTfIdf } from "./helpers";
 import { extractWordsFromUrl, getFavIconFromPage } from "./pageData";
+import { TOP_N } from "./config";
 import type { RankedPage } from "../types";
 
 export const getBookmarkedPages = (): Promise<chrome.bookmarks.BookmarkTreeNode[]> => {
@@ -64,44 +65,32 @@ export const comparePages = (
   historyItems: chrome.history.HistoryItem[],
   inputQuery: string | null,
 ): RankedPage[] => {
-  // Get every currentPageData into one giant array
-  const tokenisedCurrentPage = inputQuery
+  // Flatten bookmarks + history into one candidate pool (title + URL words).
+  const candidates = [
+    ...bookmarks.map((bm) => ({ title: bm.title, url: bm.url ?? "" })),
+    ...historyItems.map((hi) => ({ title: hi.title ?? "", url: hi.url ?? "" })),
+  ];
+  const candidateTokens = candidates.map((c) => [
+    ...tokenise(c.title),
+    ...extractWordsFromUrl(c.url),
+  ]);
+
+  // The query is either an explicit prompt/summary or the current page's words.
+  const queryTokens = inputQuery
     ? tokenise(inputQuery)
     : [...tokenise(currentPage.name ?? ""), ...extractWordsFromUrl(currentPage.url ?? "")];
-  const vectorisedCurrentPage = vectorise(tokenisedCurrentPage);
 
-  // stores the top pages' data
-  const results: RankedPage[] = [];
+  // IDF is computed across candidates + query so shared terms are weighted the
+  // same on both sides of the cosine comparison.
+  const idf = computeIdf([...candidateTokens, queryTokens]);
+  const queryVector = vectoriseTfIdf(queryTokens, idf);
 
-  // For each bookmark item in user's bookmark, get its tokenised version, vectorise it, and do a cosine similarity
-  bookmarks.forEach((bm) => {
-    const tokenisedBM = [...tokenise(bm.title), ...extractWordsFromUrl(bm.url ?? "")];
-    const vectorisedBM = vectorise(tokenisedBM);
-    const score = cosineSimilarity(vectorisedBM, vectorisedCurrentPage);
+  const results: RankedPage[] = candidates.map((c, i) => ({
+    favIcon: getFavIconFromPage(c.url),
+    score: cosineSimilarity(vectoriseTfIdf(candidateTokens[i], idf), queryVector),
+    title: c.title,
+    url: c.url,
+  }));
 
-    // Push an object into the results array that includes its title
-    results.push({
-      favIcon: getFavIconFromPage(bm.url ?? ""),
-      score,
-      title: bm.title,
-      url: bm.url ?? "",
-    });
-  });
-
-  // For each search history item in user's search histories, get its tokenised version, vectorise it, and do a cosine similarity
-  historyItems.forEach((hi) => {
-    const tokenisedHI = [...tokenise(hi.title ?? ""), ...extractWordsFromUrl(hi.url ?? "")];
-    const vectorisedHI = vectorise(tokenisedHI);
-    const score = cosineSimilarity(vectorisedHI, vectorisedCurrentPage);
-
-    // Push an object into the results array that includes its title
-    results.push({
-      favIcon: getFavIconFromPage(hi.url ?? ""),
-      score,
-      title: hi.title ?? "",
-      url: hi.url ?? "",
-    });
-  });
-
-  return results.sort((a, b) => b.score - a.score);
+  return results.sort((a, b) => b.score - a.score).slice(0, TOP_N);
 };

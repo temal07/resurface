@@ -66,6 +66,37 @@ export const vectorise = (tokens: string[]): FrequencyVector => {
   return vector;
 };
 
+// Inverse document frequency over a corpus of tokenised documents. Rare terms
+// score high, terms appearing in every document score low — this is what makes
+// the local similarity an actual TF-IDF rather than raw term-frequency cosine.
+export const computeIdf = (documents: string[][]): FrequencyVector => {
+  const docFreq: FrequencyVector = {};
+  for (const doc of documents) {
+    for (const term of new Set(doc)) {
+      docFreq[term] = (docFreq[term] || 0) + 1;
+    }
+  }
+
+  const n = documents.length;
+  const idf: FrequencyVector = {};
+  for (const term in docFreq) {
+    // Smoothed idf so a term present in every doc still keeps a small weight.
+    idf[term] = Math.log((n + 1) / (docFreq[term] + 1)) + 1;
+  }
+  return idf;
+};
+
+// Builds a TF-IDF vector: term frequency weighted by the supplied idf. Terms
+// absent from the corpus fall back to a neutral weight of 1.
+export const vectoriseTfIdf = (tokens: string[], idf: FrequencyVector): FrequencyVector => {
+  const tf = vectorise(tokens);
+  const vector: FrequencyVector = {};
+  for (const term in tf) {
+    vector[term] = tf[term] * (idf[term] ?? 1);
+  }
+  return vector;
+};
+
 // Example of using dotProduct:
 // const vecA = { the: 2, cat: 1, sat: 1 };
 // const vecB = { the: 1, cat: 2, mat: 1 };

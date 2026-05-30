@@ -26,6 +26,7 @@ The extension is written in **TypeScript** and built with **Vite** + `@crxjs/vit
       style.css      `@import "tailwindcss"` – compiled by Vite
     utils/
       constants.ts  BACKEND_URL (gitignored – create locally)
+      config.ts     Tunables: TOP_N result cap, CACHE_TTL_MS, isCacheFresh() guard
       helpers.ts    Page classification, content extraction, TF-IDF cosine similarity
       pageData.ts   Embedding API calls, cache management, rendering
       pageRelevance.ts Bookmarks/history retrieval, local TF-IDF fallback compare
@@ -97,13 +98,15 @@ Embeddings are cached in `chrome.storage.local` under the key `embed<url>`. The 
 ```ts
 { summary: string, embedding: number[], cachedAt: number }   // CacheEntry in src/types.ts
 ```
-`background.ts` auto-populates the cache on every tab load. `popup/main.ts` reads from cache first and only hits `/process-page` on a miss. Stale entries stored as raw arrays (old format) are detected and cleared on access.
+`background.ts` auto-populates the cache on every tab load. `popup/main.ts` reads from cache first and only hits `/process-page` on a miss. **All writers use this one shape** — `fetchPageReasoningData` no longer stores bare embedding arrays. `isCacheFresh()` (in `config.ts`) is the single gate every reader uses: it rejects malformed/legacy entries and enforces `CACHE_TTL_MS` (7 days), so expired embeddings are cleared and regenerated on access.
 
 ## Ranking pipeline (`popup/main.ts` `rankWithFallbacks`)
 
+Each tier falls through on a thrown error **or an empty result set** (a `200` with no pages is treated as failure), and every tier is capped at `TOP_N` (5) for a consistent result count.
+
 1. **Primary**: `/page-reasoning` — pre-filters to top-20 via local cosine similarity on cached embeddings, then asks Gemini to rank with reasons.
-2. **Fallback 1**: `/compare-pages` — server-side batch embedding + cosine similarity.
-3. **Fallback 2**: `comparePages()` in `pageRelevance.ts` — fully local TF-IDF cosine similarity, no network required.
+2. **Fallback 1**: `/compare-pages` — server-side batch embedding + cosine similarity. NOTE: tiers 1 and 2 share the same backend, so a server outage fails both and drops to tier 3.
+3. **Fallback 2**: `comparePages()` in `pageRelevance.ts` — fully local, no network required. Real **TF-IDF** (`computeIdf` + `vectoriseTfIdf` in `helpers.ts`) over candidate title+URL tokens, not raw term-frequency cosine.
 
 ## Content extraction (`content.ts` / `utils/helpers.ts`)
 

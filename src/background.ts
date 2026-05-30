@@ -3,6 +3,7 @@
 // and the content script responds with the extracted page meaning.
 
 import { BACKEND_URL } from "./utils/constants";
+import { isCacheFresh } from "./utils/config";
 import type { PageMeaning, ProcessPageResponse } from "./types";
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
@@ -13,8 +14,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   const cacheKey = `embed${tab.url}`;
   const cached = await chrome.storage.local.get(cacheKey);
 
-  if (cached[cacheKey]) {
-    console.log("Cache exists already, skipping embed:", tab.url);
+  // Skip only when a fresh (non-expired) entry already exists; stale ones fall
+  // through and get re-embedded, overwriting the old value below.
+  if (isCacheFresh(cached[cacheKey])) {
+    console.log("Fresh cache exists, skipping embed:", tab.url);
     return;
   }
 
