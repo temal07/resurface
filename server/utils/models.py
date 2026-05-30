@@ -1,5 +1,6 @@
 # Store all the models here
 from pydantic import BaseModel
+from typing import List, Optional, Union
 
 class PageDataRequest(BaseModel):
     id: int
