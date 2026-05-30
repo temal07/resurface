@@ -252,7 +252,20 @@ const init = async (): Promise<void> => {
   }
 
   const [bookmarks, searchHistory] = await Promise.all([getBookmarkedPages(), getSearchHistory()]);
-  const pageMeaning = tab.id != null ? await getPageMeaning(tab.id) : null;
+
+  // getPageMeaning messages the content script, which only runs on http/https
+  // pages. On restricted tabs (chrome://, Chrome Web Store, view-source:, PDF
+  // viewer, other extension pages) the message rejects. That's not fatal — the
+  // prompt flow needs no page meaning — so swallow it and keep going so the
+  // buttons below still get wired up instead of leaving a dead popup.
+  let pageMeaning: PageMeaning | null = null;
+  if (tab.id != null) {
+    try {
+      pageMeaning = await getPageMeaning(tab.id);
+    } catch (err) {
+      console.warn("Could not read page meaning; continuing without it.", err);
+    }
+  }
 
   updatePageData({
     id: tab.id,
