@@ -1,5 +1,5 @@
 import json
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -7,100 +7,69 @@ import os
 from google import genai
 from typing import List, Optional, Union
 from utils.helpers import cosine_similarity, extract_url, list_chunker
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from models import (
+    PageDataRequest,
+    PageDataResponse,
+    BookmarkItem,
+    SearchHistoryItem,
+    PageItem,
+    PageReasoningRequest,
+    PageReasoningResponse,
+    RankedPage,
+    CompareRequest,
+    ScoredPage,
+    CompareResponse,
+    EmbedItemsRequest,
+    PromptRequest,
+    ExpandedPromptResponse,
+)
 
 load_dotenv()
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-app = FastAPI()
+# Shared secret the extension must send on every data request. Without it the
+# API is open to anyone who reads the backend URL out of the shipped extension.
+API_SECRET = os.getenv("API_SECRET")
 
+# Cap the page text fed to Gemini so a single request can't run up a huge call.
+MAX_BODY_CHARS = 20_000
+
+
+def require_secret(x_api_key: str = Header(default="")):
+    # CORS does not protect this API (it's a browser read-permission mechanism,
+    # ignored by curl/scripts/bots). This header check is the actual gate.
+    if not API_SECRET or x_api_key != API_SECRET:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+
+def client_ip(request: Request) -> str:
+    # Render sits behind a proxy, so the real caller is in X-Forwarded-For;
+    # without this every user would share one rate-limit bucket (the proxy IP).
+    fwd = request.headers.get("x-forwarded-for")
+    return fwd.split(",")[0].strip() if fwd else get_remote_address(request)
+
+
+limiter = Limiter(key_func=client_ip, default_limits=["60/minute"])
+
+app = FastAPI()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS is not the security boundary (the secret is), but fix the dead wildcard
+# so it at least expresses intent: Starlette matches origins exactly and has no
+# support for "chrome-extension://*", so the old value matched nothing.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["chrome-extension://*"],
+    allow_origin_regex=r"chrome-extension://.*",
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # -------- Models --------
-
-class PageDataRequest(BaseModel):
-    id: int
-    name: str
-    url: str
-    favIcon: str
-    description: str
-    body: str
-
-
-class PageDataResponse(BaseModel):
-    summary: str
-    embedding: List[float]
-
-
-class BookmarkItem(BaseModel):
-    url: str
-    title: str
-    summary: str
-    favIcon: Optional[str] = ""
-    tags: Optional[List[str]] = None
-
-
-class SearchHistoryItem(BaseModel):
-    url: str
-    title: str
-    summary: str
-    timestamp: Optional[str] = None
-    query: Optional[str] = None
-
-
-class PageItem(BaseModel):
-    title: str
-    url: str
-
-
-class PageReasoningRequest(BaseModel):
-    summary: str
-    top_items: List[PageItem]
-
-
-class RankedPage(BaseModel):
-    url: str
-    title: str
-    reason: str
-
-
-class PageReasoningResponse(BaseModel):
-    pages: List[RankedPage]
-
-
-class CompareRequest(BaseModel):
-    embedding: List[float]
-    bookmarks: List[BookmarkItem]
-    history: List[SearchHistoryItem]
-
-
-class ScoredPage(BaseModel):
-    url: str
-    title: str
-    score: float
-
-
-class CompareResponse(BaseModel):
-    pages: List[ScoredPage]
-
-
-class EmbedItemsRequest(BaseModel):
-    uncached_items: List[PageItem]
-
-
-class PromptRequest(BaseModel):
-    prompt: str
-
-
-class ExpandedPromptResponse(BaseModel):
-    expanded_query: str
-    embeddings: List[float]
-
 
 # -------- Routes --------
 
@@ -109,8 +78,11 @@ def health():
     return {"status": "ok"}
 
 
-@app.post("/process-page", response_model=PageDataResponse)
-def process_page(req: PageDataRequest):
+@app.post("/process-page", response_model=PageDataResponse, dependencies=[Depends(require_secret)])
+@limiter.limit("20/minute")
+def process_page(request: Request, req: PageDataRequest):
+
+    safe_body = req.body[:MAX_BODY_CHARS]
 
     # ---- 1. Build prompt dynamically ----
     prompt = f"""
@@ -143,7 +115,7 @@ def process_page(req: PageDataRequest):
         Title: {req.name}
         Description: {req.description}
         URL: {req.url}
-        Body: {req.body}
+        Body: {safe_body}
 
         DATA PRIORITY:
         - Prioritise Body > Title > Description.
@@ -188,8 +160,9 @@ def process_page(req: PageDataRequest):
     }
 
 
-@app.post("/page-reasoning", response_model=PageReasoningResponse)
-def page_reasoning(req: PageReasoningRequest):
+@app.post("/page-reasoning", response_model=PageReasoningResponse, dependencies=[Depends(require_secret)])
+@limiter.limit("30/minute")
+def page_reasoning(request: Request, req: PageReasoningRequest):
 
     page_items_text = "\n".join(
         [f"- [{item.title}]({item.url})" for item in req.top_items]
@@ -234,8 +207,9 @@ def page_reasoning(req: PageReasoningRequest):
     return reasoning
 
 
-@app.post("/compare-pages", response_model=CompareResponse)
-def compare_pages(req: CompareRequest):
+@app.post("/compare-pages", response_model=CompareResponse, dependencies=[Depends(require_secret)])
+@limiter.limit("30/minute")
+def compare_pages(request: Request, req: CompareRequest):
      # Cap candidates to avoid slow embedding calls
     candidates = [
         {"url": b.url, "title": b.title} for b in req.bookmarks[:30]
@@ -271,8 +245,9 @@ def compare_pages(req: CompareRequest):
     return {"pages": top}
 
 
-@app.post("/embed-uncached", response_model=List[List[float]])
-def embed_uncached(req: EmbedItemsRequest):
+@app.post("/embed-uncached", response_model=List[List[float]], dependencies=[Depends(require_secret)])
+@limiter.limit("30/minute")
+def embed_uncached(request: Request, req: EmbedItemsRequest):
     # Create embeddings for uncached item
     # Chunks the list of uncached embeddings since Gemini can only accept a maximum of 100 items
     # for each call.
@@ -292,8 +267,9 @@ def embed_uncached(req: EmbedItemsRequest):
     return accumulated_chunks
 
 
-@app.post("/expand-prompt", response_model=ExpandedPromptResponse)
-def expand_prompt(req: PromptRequest):
+@app.post("/expand-prompt", response_model=ExpandedPromptResponse, dependencies=[Depends(require_secret)])
+@limiter.limit("30/minute")
+def expand_prompt(request: Request, req: PromptRequest):
     # If the user types in something vague like 'recipes', 'anthropic docs', 'ts docs', etc. 
     # this endpoint will expand that query into a richer query that contains user intent based on the words
     # written

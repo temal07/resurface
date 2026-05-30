@@ -13,7 +13,7 @@ import {
 import { getBookmarkedPages, getSearchHistory, comparePages } from "../utils/pageRelevance";
 import { getActiveTab, getPageMeaning } from "../utils/helpers";
 import { BACKEND_URL } from "../utils/constants";
-import { TOP_N, isCacheFresh } from "../utils/config";
+import { TOP_N, isCacheFresh, jsonHeaders } from "../utils/config";
 import type { CacheEntry, PageMeaning, RankedPage } from "../types";
 
 const container = document.getElementById("page-container") as HTMLElement | null;
@@ -137,7 +137,7 @@ const runInspection = async (
       })) as PageMeaning;
       const res = await fetch(`${BACKEND_URL}/process-page`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonHeaders(),
         body: JSON.stringify({
           id: tab.id,
           name: tab.title || "",

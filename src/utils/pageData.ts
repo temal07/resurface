@@ -3,7 +3,7 @@
 import { cosineSimilarity } from "./helpers";
 import { BACKEND_URL } from "./constants";
 import { getBookmarkedPages, getSearchHistory } from "./pageRelevance";
-import { isCacheFresh } from "./config";
+import { isCacheFresh, jsonHeaders } from "./config";
 import type {
   CandidateItem,
   CompareResponse,
@@ -29,7 +29,7 @@ export const compareEmbeddingResponse = async (
 ): Promise<CompareResponse> => {
   const res = await fetch(`${BACKEND_URL}/compare-pages`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders(),
     body: JSON.stringify({
       embedding,
       bookmarks: bookmarks.map((b) => ({ url: b.url, title: b.title, summary: "" })),
@@ -48,7 +48,7 @@ export const compareEmbeddingResponse = async (
 export const fetchExpandedQuery = async (prompt: string): Promise<ExpandPromptResponse> => {
   const res = await fetch(`${BACKEND_URL}/expand-prompt`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders(),
     body: JSON.stringify({ prompt }),
   });
 
@@ -60,9 +60,7 @@ export const fetchUncachedEmbeddings = async (
 ): Promise<number[][]> => {
   const res = await fetch(`${BACKEND_URL}/embed-uncached`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: jsonHeaders(),
     body: JSON.stringify({ uncached_items: uncachedItems }),
   });
 
@@ -121,7 +119,7 @@ export const fetchPageReasoningData = async (
 
     const res = await fetch(`${BACKEND_URL}/page-reasoning`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({
         summary: inputQuery,
         top_items: top20.map((x) => ({ title: x.item.title, url: x.item.url })),
@@ -132,7 +130,7 @@ export const fetchPageReasoningData = async (
   } else {
     const res = await fetch(`${BACKEND_URL}/page-reasoning`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({
         summary: inputQuery,
         top_items: allCachesCombined.slice(0, 20).map((item) => ({ title: item.title, url: item.url })),

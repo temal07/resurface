@@ -2,6 +2,13 @@
 // constants.ts (which only holds the environment-specific BACKEND_URL).
 
 import type { CacheEntry } from "../types";
+import { API_SECRET } from "./constants";
+
+/** Headers for every POST to the backend: JSON + the shared-secret auth header. */
+export const jsonHeaders = (): Record<string, string> => ({
+  "Content-Type": "application/json",
+  "x-api-key": API_SECRET,
+});
 
 /** Max results surfaced by every ranking tier, so the popup list stays bounded. */
 export const TOP_N = 5;

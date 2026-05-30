@@ -3,7 +3,7 @@
 // and the content script responds with the extracted page meaning.
 
 import { BACKEND_URL } from "./utils/constants";
-import { isCacheFresh } from "./utils/config";
+import { isCacheFresh, jsonHeaders } from "./utils/config";
 import type { PageMeaning, ProcessPageResponse } from "./types";
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
@@ -35,7 +35,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         // Call the process-page endpoint to generate the embedding and summary, then cache the embedding
         const res = await fetch(`${BACKEND_URL}/process-page`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: jsonHeaders(),
           body: JSON.stringify({
             id: tabId,
             name: tab.title || "",

@@ -8,7 +8,7 @@ Resurface is a Chrome Extension (Manifest V3) that surfaces contextually relevan
 
 The extension is written in **TypeScript** and built with **Vite** + `@crxjs/vite-plugin`. Tailwind v4 (`@tailwindcss/vite`) compiles the popup stylesheet. The build output in `dist/` is what gets loaded into Chrome — source is no longer loaded directly.
 
-## Project structure
+## Project structure  
 
 ```
 /                   Repo root
