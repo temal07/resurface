@@ -1,1 +1,0 @@
-export const BACKEND_URL = "https://resurface-si7m.onrender.com"
