@@ -1,5 +1,5 @@
 # Store all the models here
-
+from pydantic import BaseModel
 
 class PageDataRequest(BaseModel):
     id: int
