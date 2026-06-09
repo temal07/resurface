@@ -67,3 +67,8 @@ export interface CandidateItem {
   url: string;
   title: string;
 }
+
+export interface StoredResults {
+  pages: RankedPage[];
+  savedAt: number;
+}

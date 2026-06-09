@@ -14,7 +14,7 @@ import { getBookmarkedPages, getSearchHistory, comparePages } from "../utils/pag
 import { getActiveTab, getPageMeaning } from "../utils/helpers";
 import { BACKEND_URL } from "../utils/constants";
 import { TOP_N, isCacheFresh, jsonHeaders } from "../utils/config";
-import type { CacheEntry, PageMeaning, RankedPage } from "../types";
+import type { CacheEntry, PageMeaning, RankedPage, StoredResults } from "../types";
 
 const container = document.getElementById("page-container") as HTMLElement | null;
 const relatedPageContainer = document.getElementById("relevant-pages-container") as HTMLElement;
@@ -104,6 +104,31 @@ const rankWithFallbacks = async (
   return comparePages({ id: "prompt-or-inspect" }, bookmarks, searchHistory, inputQuery);
 };
 
+// Last ranked results are persisted per tab URL (separate `results` namespace —
+// never the `embed` keys, those belong to the embedding cache) so reopening the
+// popup can show them without re-running the pipeline. Results go stale much
+// faster than embeddings: bookmarks/history shift as the user browses.
+const RESULTS_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+const resultsKey = (tabUrl: string): string => `results${tabUrl}`;
+
+const storeResults = async (tabUrl: string, pages: RankedPage[]): Promise<void> => {
+  const entry: StoredResults = { pages, savedAt: Date.now() };
+  await chrome.storage.local.set({ [resultsKey(tabUrl)]: entry });
+};
+
+const loadStoredResults = async (tabUrl: string): Promise<RankedPage[] | null> => {
+  const key = resultsKey(tabUrl);
+  const stored = await chrome.storage.local.get(key);
+  const entry = stored[key] as StoredResults | undefined;
+  if (!entry || !Array.isArray(entry.pages) || entry.pages.length === 0) return null;
+  if (typeof entry.savedAt !== "number" || Date.now() - entry.savedAt > RESULTS_TTL_MS) {
+    await chrome.storage.local.remove(key);
+    return null;
+  }
+  return entry.pages;
+};
+
 const runInspection = async (
   tab: chrome.tabs.Tab,
   bookmarks: chrome.bookmarks.BookmarkTreeNode[],
@@ -162,6 +187,9 @@ const runInspection = async (
     );
     console.timeEnd("rankWithFallbacks (with summary)");
     renderRelativePageData(finalResults, relatedPageContainer);
+    if (tab.url) {
+      await storeResults(tab.url, finalResults);
+    }
   } catch (error) {
     console.error(error);
     renderInspectionError("Failed to inspect this page. Please try again.");
@@ -278,6 +306,16 @@ const init = async (): Promise<void> => {
 
   if (container) {
     renderPageData(pageData, container);
+  }
+
+  // Restore the last inspection results for this page (if any and not expired)
+  // so closing and reopening the popup doesn't lose them. Inspect still re-runs
+  // the pipeline and overwrites.
+  if (tab.url) {
+    const previousResults = await loadStoredResults(tab.url);
+    if (previousResults) {
+      renderRelativePageData(previousResults, relatedPageContainer);
+    }
   }
 
   if (inspectButton) {

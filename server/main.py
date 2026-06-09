@@ -69,8 +69,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -------- Models --------
-
 # -------- Routes --------
 
 @app.get("/")
