@@ -1,10 +1,15 @@
 import json
+import os
+import threading
+import time
+import urllib.request
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Header, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-import os
 from google import genai
+from google.genai import types
 from typing import List, Optional, Union
 from utils.helpers import cosine_similarity, extract_url, list_chunker
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -31,6 +36,13 @@ load_dotenv()
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
+# gemini-2.5-flash runs an internal "thinking" pass before answering, adding
+# several seconds per call. Extraction/ranking/expansion don't need reasoning
+# tokens, so disable it (budget=0) to cut latency on the hot path.
+NO_THINKING = types.GenerateContentConfig(
+    thinking_config=types.ThinkingConfig(thinking_budget=0)
+)
+
 # Shared secret the extension must send on every data request. Without it the
 # API is open to anyone who reads the backend URL out of the shipped extension.
 API_SECRET = os.getenv("API_SECRET")
@@ -55,7 +67,31 @@ def client_ip(request: Request) -> str:
 
 limiter = Limiter(key_func=client_ip, default_limits=["60/minute"])
 
-app = FastAPI()
+# Render sets RENDER_EXTERNAL_URL to the service's public URL. On the free tier
+# the instance spins down after ~15 min with no inbound traffic, so the next
+# request eats a ~30-50s cold start. Pinging our own health endpoint below that
+# window keeps the instance warm. No-op locally (env var unset).
+SELF_URL = os.getenv("RENDER_EXTERNAL_URL")
+KEEPALIVE_INTERVAL_S = 600  # 10 min, comfortably under Render's 15-min idle timeout
+
+
+def _keepalive_loop() -> None:
+    while True:
+        time.sleep(KEEPALIVE_INTERVAL_S)
+        try:
+            urllib.request.urlopen(f"{SELF_URL}/", timeout=10).close()
+        except Exception:
+            pass  # transient failure; just try again next tick
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if SELF_URL:
+        threading.Thread(target=_keepalive_loop, daemon=True).start()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -136,6 +172,7 @@ def process_page(request: Request, req: PageDataRequest):
         summary_resp = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
+            config=NO_THINKING,
         )
         summary = summary_resp.text.strip()
     except Exception as e:
@@ -196,6 +233,7 @@ def page_reasoning(request: Request, req: PageReasoningRequest):
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
+            config=NO_THINKING,
         )
         text = response.text.strip().removeprefix("```json").removesuffix("```").strip()
         reasoning = json.loads(text)
@@ -284,7 +322,8 @@ def expand_prompt(request: Request, req: PromptRequest):
     try:
         prompt_res = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=prompt
+            contents=prompt,
+            config=NO_THINKING,
         )
         expanded_query = prompt_res.text.strip()
 
