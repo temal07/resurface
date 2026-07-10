@@ -13,7 +13,7 @@ import {
 import { getBookmarkedPages, getSearchHistory, comparePages } from "../utils/pageRelevance";
 import { getActiveTab, getPageMeaning } from "../utils/helpers";
 import { BACKEND_URL } from "../utils/constants";
-import { TOP_N, isCacheFresh, jsonHeaders } from "../utils/config";
+import { TOP_N, embedCacheKey, isCacheFresh, jsonHeaders } from "../utils/config";
 import type { CacheEntry, PageMeaning, RankedPage, StoredResults } from "../types";
 
 const container = document.getElementById("page-container") as HTMLElement | null;
@@ -58,27 +58,7 @@ const rankWithFallbacks = async (
   // Either accepts a page summary or a prompt
   const inputQuery = summary || prompt;
 
-  // Tier 1 — LLM reasoning. Fall through on error OR on an empty result set
-  // (a 200 with no pages is still a failure for our purposes).
-  try {
-    const recommendations = await fetchPageReasoningData(inputQuery ?? "", embedding);
-    console.log(recommendations);
-    const pages = recommendations?.pages ?? [];
-    if (pages.length > 0) {
-      return pages.slice(0, TOP_N).map((page) => ({
-        url: page.url,
-        title: page.title,
-        favIcon: getFavIconFromPage(page.url),
-        reason: page.reason,
-        score: 1,
-      }));
-    }
-    console.warn("Reasoning returned no pages. Falling back to embedding compare.");
-  } catch (reasoningError) {
-    console.warn("Reasoning failed. Falling back to embedding compare.", reasoningError);
-  }
-
-  // Tier 2 — server-side embedding compare. Same empty-result guard.
+  // Tier 1 — server-side embedding compare. Fall through on error OR on empty result set
   if (embedding) {
     try {
       const compareData = await compareEmbeddingResponse(embedding, bookmarks, searchHistory);
@@ -92,12 +72,31 @@ const rankWithFallbacks = async (
           score: page.score,
         }));
       }
-      console.warn("Embedding compare returned no pages. Falling back to local similarity.");
+      console.warn("Embedding compare returned no pages. Falling back to LLM reasoning.");
     } catch (embeddingError) {
-      console.warn("Embedding compare failed. Falling back to local similarity.", embeddingError);
+      console.warn("Embedding compare failed. Falling back to LLM reasoning.", embeddingError);
     }
   } else {
-    console.warn("No query embedding provided. Skipping embedding compare fallback.");
+    console.warn("No query embedding provided. Skipping embedding compare.");
+  }
+
+  // Tier 2 — LLM reasoning. Same empty-result guard.
+  try {
+    const recommendations = await fetchPageReasoningData(inputQuery ?? "", embedding);
+    console.log(recommendations);
+    const pages = recommendations?.pages ?? [];
+    if (pages.length > 0) {
+      return pages.slice(0, TOP_N).map((page) => ({
+        url: page.url,
+        title: page.title,
+        favIcon: getFavIconFromPage(page.url),
+        reason: page.reason,
+        score: 1,
+      }));
+    }
+    console.warn("Reasoning returned no pages. Falling back to local similarity.");
+  } catch (reasoningError) {
+    console.warn("Reasoning failed. Falling back to local similarity.", reasoningError);
   }
 
   // Tier 3 — fully local TF-IDF (already capped at TOP_N inside comparePages).
@@ -140,7 +139,7 @@ const runInspection = async (
   renderInspectionLoading("Inspecting page and finding related links...");
 
   try {
-    const cacheKey = `embed${tab.url}`;
+    const cacheKey = embedCacheKey(tab.url ?? "");
     console.log("Cache key: ", cacheKey);
     const cached = await chrome.storage.local.get(cacheKey);
     console.log("Cached: ", cached);

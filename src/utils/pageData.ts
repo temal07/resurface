@@ -3,7 +3,7 @@
 import { cosineSimilarity } from "./helpers";
 import { BACKEND_URL } from "./constants";
 import { getBookmarkedPages, getSearchHistory } from "./pageRelevance";
-import { isCacheFresh, jsonHeaders } from "./config";
+import { embedCacheKey, isCacheFresh, jsonHeaders } from "./config";
 import type {
   CandidateItem,
   CompareResponse,
@@ -78,14 +78,14 @@ export const fetchPageReasoningData = async (
   const rawHistory = await getSearchHistory();
 
   const allItems = [...rawBookmarks, ...rawHistory].filter((item) => item.url != currentUrl);
-  const cacheKeys = allItems.map((item) => `embed${item.url}`);
+  const cacheKeys = allItems.map((item) => embedCacheKey(item.url ?? ""));
 
   const cachedResults = await Promise.all(cacheKeys.map((key) => chrome.storage.local.get(key)));
 
   // Stale or malformed entries (no cachedAt, expired, or legacy raw arrays) are
   // treated as uncached so they get re-embedded with a fresh, uniform shape.
-  const areNotCached = allItems.filter((item, i) => !isCacheFresh(cachedResults[i][`embed${item.url}`]));
-  const areCached = allItems.filter((item, i) => isCacheFresh(cachedResults[i][`embed${item.url}`]));
+  const areNotCached = allItems.filter((_, i) => !isCacheFresh(cachedResults[i][cacheKeys[i]]));
+  const areCached = allItems.filter((_, i) => isCacheFresh(cachedResults[i][cacheKeys[i]]));
   const allCachesCombined = [...areCached, ...areNotCached];
 
   if (embedding) {
@@ -99,14 +99,15 @@ export const fetchPageReasoningData = async (
     // every reader can rely on `.embedding` — matches what background.ts writes.
     areNotCached.forEach((item, i) => {
       chrome.storage.local.set({
-        [`embed${item.url}`]: { summary: "", embedding: uncachedEmbeddings[i], cachedAt: Date.now() },
+        [embedCacheKey(item.url ?? "")]: { summary: "", embedding: uncachedEmbeddings[i], cachedAt: Date.now() },
       });
     });
 
     const cachedEmbeddings = await Promise.all(
       areCached.map(async (item) => {
-        const result = await chrome.storage.local.get(`embed${item.url}`);
-        const val = result[`embed${item.url}`];
+        const key = embedCacheKey(item.url ?? "");
+        const result = await chrome.storage.local.get(key);
+        const val = result[key];
         return (val?.embedding ?? val) as number[];
       }),
     );
