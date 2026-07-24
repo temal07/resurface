@@ -156,9 +156,10 @@ const runInspection = async (
 
     // on-demand trigger on the page data instead of calling fetchGeneratedPageData()
     if (!generatedPageData) {
-      const pageResponse = (await chrome.tabs.sendMessage(tab.id!, {
-        type: "EXTRACT_PAGE_MEANING",
-      })) as PageMeaning;
+      const pageResponse = await getPageMeaning(tab.id!)
+
+      if (!pageResponse) 
+        renderInspectionError("Cannot read this page.");
       const res = await fetch(`${BACKEND_URL}/process-page`, {
         method: "POST",
         headers: jsonHeaders(),
@@ -167,8 +168,8 @@ const runInspection = async (
           name: tab.title || "",
           url: tab.url,
           favIcon: tab.favIconUrl || "",
-          description: pageResponse.description || "",
-          body: pageResponse.body || "",
+          description: pageResponse?.description || "",
+          body: pageResponse?.body || "",
         }),
       });
       generatedPageData = (await res.json()) as CacheEntry;

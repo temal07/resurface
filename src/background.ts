@@ -11,6 +11,7 @@
 import { BACKEND_URL } from "./utils/constants";
 import { EMBED_DWELL_MS, embedCacheKey, isCacheFresh, jsonHeaders } from "./utils/config";
 import type { PageMeaning, ProcessPageResponse } from "./types";
+import { isInjectable } from "./utils/helpers";
 
 const pendingEmbeds = new Map<number, ReturnType<typeof setTimeout>>();
 const inFlightKeys = new Set<string>();
@@ -18,6 +19,9 @@ const inFlightKeys = new Set<string>();
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status !== "complete") return;
   if (!tab.url || !tab.url.startsWith("http")) return;
+  
+  // Only embed on injectable pages:
+  if (!isInjectable(tab.url)) return;
 
   // Restart the dwell clock on every load; a navigation before it fires means
   // the user bounced and the old page never gets embedded.

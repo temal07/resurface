@@ -254,12 +254,13 @@ def compare_pages(request: Request, req: CompareRequest):
     ]
 
     # Embed all candidates in one batch call
-    texts = [f"{c['title']}\n{c['url']}" for c in candidates]
+    texts = [f"{c['title']}" for c in candidates]
 
     try:
         embed_resp = client.models.embed_content(
             model="gemini-embedding-001",
             contents=texts,
+            config={"task_type": "RETRIEVAL_DOCUMENT"}
         )
         embeddings = [e.values for e in embed_resp.embeddings]
     except Exception as e:
@@ -289,9 +290,10 @@ def embed_uncached(request: Request, req: EmbedItemsRequest):
     # for each call.
 
     chunked_list = list_chunker(req.uncached_items, 100)
+    contents_only_title = [item.title for item in chunked_list]
     accumulated_chunks = []
 
-    for chunked_items in chunked_list:
+    for chunked_items in contents_only_title:
         embed_response = client.models.embed_content(
             model="gemini-embedding-001",
             contents=[f"{item.title} {extract_url(item.url)}" for item in chunked_items],

@@ -18,20 +18,28 @@ export const getActiveTab = async (): Promise<chrome.tabs.Tab> => {
   });
 };
 
-export const getPageDescription = (tabId: number): Promise<string> => {
-  return new Promise((resolve, reject) => {
+export const getPageDescription = (tabId: number): Promise<string | null> => {
+  return new Promise((resolve) => {
     chrome.tabs.sendMessage(tabId, { type: "GET_PAGE_DESCRIPTION" }, (res) => {
-      if (chrome.runtime.lastError) return reject(chrome.runtime.lastError.message);
-      resolve(res.description);
+      // Instead of rejecting, resolve, expected issue.
+      if (chrome.runtime.lastError) {
+        resolve(null);
+        return;
+      }
+      resolve(res ?? null);
     });
   });
 };
 
 export const getPageMeaning = (tabId: number): Promise<PageMeaning | null> => {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     chrome.tabs.sendMessage(tabId, { type: "EXTRACT_PAGE_MEANING" }, (res) => {
-      if (chrome.runtime.lastError) return reject(chrome.runtime.lastError.message);
-      resolve(res);
+      // Instead of rejecting, resolve, expected issue (no content script).
+      if (chrome.runtime.lastError) {
+        resolve(null);
+        return;
+      }
+      resolve((res as PageMeaning) ?? null);
     });
   });
 };
@@ -205,3 +213,11 @@ export const processURL = (url: string): string => {
     return "";
   }
 };
+
+// Helps identify a page that is injectable, i.e., resurface 
+// can read its contents. 
+export const isInjectable = (url?: string): boolean =>
+  !!url &&
+  /^https?:\/\//.test(url) &&
+  !url.startsWith("https://chromewebstore.google.com") &&
+  !url.startsWith("https://chrome.google.com/webstore");
