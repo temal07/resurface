@@ -289,17 +289,15 @@ def embed_uncached(request: Request, req: EmbedItemsRequest):
     # Chunks the list of uncached embeddings since Gemini can only accept a maximum of 100 items
     # for each call.
 
-    chunked_list = list_chunker(req.uncached_items, 100)
-    contents_only_title = [item.title for item in chunked_list]
+   chunked_list = list_chunker(req.uncached_items, 100)
     accumulated_chunks = []
 
-    for chunked_items in contents_only_title:
+    for chunked_items in chunked_list:
         embed_response = client.models.embed_content(
             model="gemini-embedding-001",
-            contents=[f"{item.title} {extract_url(item.url)}" for item in chunked_items],
-            config={"task_type": "RETRIEVAL_DOCUMENT"}
+            contents=[item.title for item in chunked_items],
+            config={"task_type": "RETRIEVAL_DOCUMENT"},
         )
-
         accumulated_chunks.extend([e.values for e in embed_response.embeddings])
 
     return accumulated_chunks
