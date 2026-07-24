@@ -254,7 +254,7 @@ def compare_pages(request: Request, req: CompareRequest):
     ]
 
     # Embed all candidates in one batch call
-    texts = [f"{c['title']}" for c in candidates]
+    texts = [c["title"] for c in candidates]
 
     try:
         embed_resp = client.models.embed_content(
@@ -289,7 +289,7 @@ def embed_uncached(request: Request, req: EmbedItemsRequest):
     # Chunks the list of uncached embeddings since Gemini can only accept a maximum of 100 items
     # for each call.
 
-   chunked_list = list_chunker(req.uncached_items, 100)
+    chunked_list = list_chunker(req.uncached_items, 100)
     accumulated_chunks = []
 
     for chunked_items in chunked_list:
