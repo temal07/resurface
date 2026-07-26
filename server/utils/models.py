@@ -1,6 +1,6 @@
 # Store all the models here
 from pydantic import BaseModel
-from typing import List, Optional, Union
+from typing import List
 
 class PageDataRequest(BaseModel):
     id: int
@@ -14,22 +14,6 @@ class PageDataRequest(BaseModel):
 class PageDataResponse(BaseModel):
     summary: str
     embedding: List[float]
-
-
-class BookmarkItem(BaseModel):
-    url: str
-    title: str
-    summary: str
-    favIcon: Optional[str] = ""
-    tags: Optional[List[str]] = None
-
-
-class SearchHistoryItem(BaseModel):
-    url: str
-    title: str
-    summary: str
-    timestamp: Optional[str] = None
-    query: Optional[str] = None
 
 
 class PageItem(BaseModel):
@@ -50,22 +34,6 @@ class RankedPage(BaseModel):
 
 class PageReasoningResponse(BaseModel):
     pages: List[RankedPage]
-
-
-class CompareRequest(BaseModel):
-    embedding: List[float]
-    bookmarks: List[BookmarkItem]
-    history: List[SearchHistoryItem]
-
-
-class ScoredPage(BaseModel):
-    url: str
-    title: str
-    score: float
-
-
-class CompareResponse(BaseModel):
-    pages: List[ScoredPage]
 
 
 class EmbedItemsRequest(BaseModel):

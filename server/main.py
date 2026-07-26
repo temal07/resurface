@@ -11,26 +11,22 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from typing import List, Optional, Union
-from utils.helpers import cosine_similarity, extract_url, list_chunker
+from utils.helpers import extract_url, list_chunker
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from utils.models import (
     PageDataRequest,
     PageDataResponse,
-    BookmarkItem,
-    SearchHistoryItem,
     PageItem,
     PageReasoningRequest,
     PageReasoningResponse,
     RankedPage,
-    CompareRequest,
-    ScoredPage,
-    CompareResponse,
     EmbedItemsRequest,
     PromptRequest,
     ExpandedPromptResponse,
 )
+import logging
 
 load_dotenv()
 
@@ -49,6 +45,8 @@ API_SECRET = os.getenv("API_SECRET")
 
 # Cap the page text fed to Gemini so a single request can't run up a huge call.
 MAX_BODY_CHARS = 20_000
+
+logger = logging.getLogger("uvicorn.error")
 
 
 def require_secret(x_api_key: str = Header(default="")):
@@ -175,8 +173,9 @@ def process_page(request: Request, req: PageDataRequest):
             config=NO_THINKING,
         )
         summary = summary_resp.text.strip()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Summary failed: {e}")
+    except Exception:
+        logger.exception("summary failed")
+        raise HTTPException(status_code=500, detail="Summary failed")
 
     # ---- 3. Generate embedding ----
     try:
@@ -186,8 +185,9 @@ def process_page(request: Request, req: PageDataRequest):
             config={"task_type": "RETRIEVAL_DOCUMENT"}
         )
         embedding = embed_resp.embeddings[0].values
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Embedding failed: {e}")
+    except Exception:
+        logger.exception("embedding failed")
+        raise HTTPException(status_code=500, detail="Embedding failed")
 
     return {
         "summary": summary,
@@ -237,49 +237,11 @@ def page_reasoning(request: Request, req: PageReasoningRequest):
         )
         text = response.text.strip().removeprefix("```json").removesuffix("```").strip()
         reasoning = json.loads(text)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Reasoning failed: {e}")
+    except Exception:
+        logger.exception("reasoning failed")
+        raise HTTPException(status_code=500, detail="Reasoning failed")
 
     return reasoning
-
-
-@app.post("/compare-pages", response_model=CompareResponse, dependencies=[Depends(require_secret)])
-@limiter.limit("30/minute")
-def compare_pages(request: Request, req: CompareRequest):
-     # Cap candidates to avoid slow embedding calls
-    candidates = [
-        {"url": b.url, "title": b.title} for b in req.bookmarks[:30]
-    ] + [
-        {"url": h.url, "title": h.title} for h in req.history[:50]
-    ]
-
-    # Embed all candidates in one batch call
-    texts = [c["title"] for c in candidates]
-
-    try:
-        embed_resp = client.models.embed_content(
-            model="gemini-embedding-001",
-            contents=texts,
-            config={"task_type": "RETRIEVAL_DOCUMENT"}
-        )
-        embeddings = [e.values for e in embed_resp.embeddings]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Embedding failed: {e}")
-
-    # Score each candidate
-    scored = []
-    for candidate, embedding in zip(candidates, embeddings):
-        score = cosine_similarity(req.embedding, embedding)
-        scored.append({
-            "url": candidate["url"],
-            "title": candidate["title"],
-            "score": score,
-        })
-
-    # Sort and return top 5
-    top = sorted(scored, key=lambda x: x["score"], reverse=True)[:5]
-
-    return {"pages": top}
 
 
 @app.post("/embed-uncached", response_model=List[List[float]], dependencies=[Depends(require_secret)])
@@ -335,8 +297,9 @@ def expand_prompt(request: Request, req: PromptRequest):
             config={"task_type": "RETRIEVAL_QUERY"}
         )
         embeddings = embed_resp.embeddings[0].values
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Expansion failed: {e}")
+    except Exception:
+        logger.exception("expansion failed")
+        raise HTTPException(status_code=500, detail="Expansion failed")
 
     return {
         "expanded_query": expanded_query,
