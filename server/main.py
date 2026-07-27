@@ -254,13 +254,17 @@ def embed_uncached(request: Request, req: EmbedItemsRequest):
     chunked_list = list_chunker(req.uncached_items, 100)
     accumulated_chunks = []
 
-    for chunked_items in chunked_list:
-        embed_response = client.models.embed_content(
-            model="gemini-embedding-001",
-            contents=[item.title for item in chunked_items],
-            config={"task_type": "RETRIEVAL_DOCUMENT"},
-        )
-        accumulated_chunks.extend([e.values for e in embed_response.embeddings])
+    try:
+        for chunked_items in chunked_list:
+            embed_response = client.models.embed_content(
+                model="gemini-embedding-001",
+                contents=[item.title.strip() or item.url or "untitled" for item in chunked_items],
+                config={"task_type": "RETRIEVAL_DOCUMENT"},
+            )
+            accumulated_chunks.extend([e.values for e in embed_response.embeddings])
+    except Exception as e:
+        logger.error("embed_uncached failed: %s", type(e).__name__)
+        raise HTTPException(status_code=500, detail="embed_failed")
 
     return accumulated_chunks
 

@@ -227,6 +227,15 @@ export const isInjectable = (url?: string): boolean =>
   !url.startsWith("https://chromewebstore.google.com") &&
   !url.startsWith("https://chrome.google.com/webstore");
 
+const ping  = async (tabId: number): Promise<boolean> => {
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: "PING" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 
 /**
  * Ensures that the content script is loaded and ready in the given tab.
@@ -238,19 +247,24 @@ export const isInjectable = (url?: string): boolean =>
  * @returns A promise that resolves to true if the content script is loaded, false otherwise.
  */
 export const ensureContentScript = async (tabId: number) : Promise<boolean> => {
+  if (await ping(tabId)) return true;
+
   try {
-    await chrome.tabs.sendMessage(tabId, { type: "PING" });
-    return true;
+    const files = chrome.runtime.getManifest().content_scripts?.[0]?.js ?? [];
+    await chrome.scripting.executeScript({ target: { tabId }, files });
   } catch (error) {
-    try {
-      const files = chrome.runtime.getManifest().content_scripts?.[0]?.js ?? [];
-      await chrome.scripting.executeScript({ target: { tabId }, files });
-      return true;
-    } catch (error) {
-      // Applies for chrome://, web store, PDF viewer. No action can be taken 
-      // in this case.
-      console.debug("Content script unavailable (chrome://, web store, or PDF viewer):", error);
-      return false;
-    }
+    console.debug("Injection unavailable:", error);
+    return false;
   }
+
+  // crxjs injects a loader that dynamically imports the real module, so
+  // execute Script resolving does not mean the listeners exist yet.
+
+  for (let i = 0; i < 20; i++) {
+    if (await ping(tabId)) return true;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+
+  return false;
 }
+

@@ -99,7 +99,10 @@ export const fetchPageReasoningData = async (
   const rawBookmarks = await getBookmarkedPages();
   const rawHistory = await getSearchHistory();
 
-  const allItems = [...rawBookmarks, ...rawHistory].filter((item) => item.url != currentUrl);
+  const allItems = [...rawBookmarks, ...rawHistory]
+    .filter((item) => item.url != currentUrl)
+    .filter((item) => (item.title?.trim() || item.url?.trim()));
+  
   const candidateItems: CandidateItem[] = allItems.map((item) => ({
     url: item.url ?? "",
     title: item.title ?? "",
