@@ -217,7 +217,7 @@ def page_reasoning(request: Request, req: PageReasoningRequest):
             "pages": [
                 {{"url": "...", "title": "...", "reason": "one sentence why it's relevant"}},
                 ...
-            ]
+            ],
             "reason": "brief phrase (5-8 words) explaining why nothing matched, or null if pages is not empty"
         }}
 

@@ -28,6 +28,8 @@ export const fetchExpandedQuery = async (prompt: string): Promise<ExpandPromptRe
     body: JSON.stringify({ prompt }),
   });
 
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+
   return (await res.json()) as ExpandPromptResponse;
 };
 
@@ -39,6 +41,8 @@ export const fetchUncachedEmbeddings = async (
     headers: jsonHeaders(),
     body: JSON.stringify({ uncached_items: uncachedItems }),
   });
+
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
 
   const data = (await res.json()) as number[][];
   return data;
@@ -119,6 +123,8 @@ export const fetchPageReasoningData = async (
       }),
     });
 
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+
     return (await res.json()) as ReasoningResponse;
   } else {
     const res = await fetch(`${BACKEND_URL}/page-reasoning`, {
@@ -129,6 +135,8 @@ export const fetchPageReasoningData = async (
         top_items: candidateItems.slice(0, 20).map((item) => ({ title: item.title, url: item.url })),
       }),
     });
+
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
 
     return (await res.json()) as ReasoningResponse;
   }

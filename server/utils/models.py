@@ -29,11 +29,12 @@ class PageReasoningRequest(BaseModel):
 class RankedPage(BaseModel):
     url: str
     title: str
-    reason: str
+    reason: str = ""
 
 
 class PageReasoningResponse(BaseModel):
     pages: List[RankedPage]
+    reason: Optional[str] = None
 
 
 class EmbedItemsRequest(BaseModel):
