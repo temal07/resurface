@@ -14,6 +14,15 @@ export const jsonHeaders = (): Record<string, string> => ({
 export const TOP_N = 5;
 
 /**
+ * Minimum cosine score the top local-similarity match must clear before it's
+ * trusted on its own. Below this, `rankWithFallbacks` escalates to the LLM
+ * reasoning tier instead of returning weak local matches. Gemini embedding
+ * cosine scores for genuinely related pages tend to cluster well above this;
+ * tune based on observed score distributions if it's over/under-triggering.
+ */
+export const SIMILARITY_THRESHOLD = 0.65;
+
+/**
  * How long a tab must stay on a page before the background worker embeds it.
  * Pages the user bounces off within this window never hit Gemini, which is the
  * single biggest API-cost lever (each /process-page call = 2 Gemini requests).

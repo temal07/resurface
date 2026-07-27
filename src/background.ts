@@ -11,7 +11,7 @@
 import { BACKEND_URL } from "./utils/constants";
 import { EMBED_DWELL_MS, embedCacheKey, isCacheFresh, jsonHeaders } from "./utils/config";
 import type { PageMeaning, ProcessPageResponse } from "./types";
-import { isInjectable } from "./utils/helpers";
+import { ensureContentScript, isInjectable } from "./utils/helpers";
 
 const pendingEmbeds = new Map<number, ReturnType<typeof setTimeout>>();
 const inFlightKeys = new Set<string>();
@@ -72,9 +72,14 @@ const embedIfStillViewing = async (tabId: number, originalUrl: string): Promise<
 
   inFlightKeys.add(cacheKey);
   try {
-    const response = (await chrome.tabs.sendMessage(tabId, {
-      type: "EXTRACT_PAGE_MEANING",
-    })) as PageMeaning | null;
+    if (!(await ensureContentScript(tabId))) return;
+    let response: PageMeaning | null = null;
+
+    try {
+      response = await chrome.tabs.sendMessage(tabId, { type: "EXTRACT_PAGE_MEANING" });
+    } catch {
+      return;
+    }
 
     // Call the process-page endpoint to generate the embedding and summary, then cache the embedding
     const res = await fetch(`${BACKEND_URL}/process-page`, {

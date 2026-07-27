@@ -6,7 +6,6 @@ import { getBookmarkedPages, getSearchHistory } from "./pageRelevance";
 import { embedCacheKey, isCacheFresh, jsonHeaders } from "./config";
 import type {
   CandidateItem,
-  CompareResponse,
   ExpandPromptResponse,
   PageData,
   RankedPage,
@@ -20,29 +19,6 @@ export const pageData: PageData = {
   favIcon: "",
   description: "",
   body: "",
-};
-
-export const compareEmbeddingResponse = async (
-  embedding: number[],
-  bookmarks: chrome.bookmarks.BookmarkTreeNode[],
-  searchHistory: chrome.history.HistoryItem[],
-): Promise<CompareResponse> => {
-  const res = await fetch(`${BACKEND_URL}/compare-pages`, {
-    method: "POST",
-    headers: jsonHeaders(),
-    body: JSON.stringify({
-      embedding,
-      bookmarks: bookmarks.map((b) => ({ url: b.url, title: b.title, summary: "" })),
-      history: searchHistory.map((h) => ({
-        url: h.url,
-        title: h.title,
-        summary: "",
-        timestamp: h.lastVisitTime?.toString() || null,
-      })),
-    }),
-  });
-  const compareData = (await res.json()) as CompareResponse;
-  return compareData;
 };
 
 export const fetchExpandedQuery = async (prompt: string): Promise<ExpandPromptResponse> => {
@@ -68,6 +44,48 @@ export const fetchUncachedEmbeddings = async (
   return data;
 };
 
+/**
+ * Resolves embeddings for a list of candidates, hitting `/embed-uncached` only
+ * for genuine cache misses. Returned embeddings line up index-for-index with
+ * `items`. Every fresh embedding is written back in the canonical CacheEntry
+ * shape ({ summary, embedding, cachedAt }) — matches what background.ts writes.
+ */
+export const getCandidateEmbeddings = async (items: CandidateItem[]): Promise<number[][]> => {
+  const cacheKeys = items.map((item) => embedCacheKey(item.url));
+  const cachedResults = await Promise.all(cacheKeys.map((key) => chrome.storage.local.get(key)));
+
+  // Stale or malformed entries (no cachedAt, expired, or legacy raw arrays) are
+  // treated as uncached so they get re-embedded with a fresh, uniform shape.
+  const uncachedIndices: number[] = [];
+  const uncachedItems: CandidateItem[] = [];
+  items.forEach((item, i) => {
+    if (!isCacheFresh(cachedResults[i][cacheKeys[i]])) {
+      uncachedIndices.push(i);
+      uncachedItems.push(item);
+    }
+  });
+
+  const uncachedEmbeddings =
+    uncachedItems.length > 0 ? await fetchUncachedEmbeddings(uncachedItems) : [];
+
+  uncachedItems.forEach((item, i) => {
+    chrome.storage.local.set({
+      [embedCacheKey(item.url)]: { summary: "", embedding: uncachedEmbeddings[i], cachedAt: Date.now() },
+    });
+  });
+
+  const embeddings: number[][] = new Array(items.length);
+  uncachedIndices.forEach((itemIndex, i) => {
+    embeddings[itemIndex] = uncachedEmbeddings[i];
+  });
+  items.forEach((_, i) => {
+    if (embeddings[i]) return;
+    embeddings[i] = cachedResults[i][cacheKeys[i]].embedding as number[];
+  });
+
+  return embeddings;
+};
+
 export const fetchPageReasoningData = async (
   inputQuery: string,
   embedding: number[] | null,
@@ -78,44 +96,18 @@ export const fetchPageReasoningData = async (
   const rawHistory = await getSearchHistory();
 
   const allItems = [...rawBookmarks, ...rawHistory].filter((item) => item.url != currentUrl);
-  const cacheKeys = allItems.map((item) => embedCacheKey(item.url ?? ""));
-
-  const cachedResults = await Promise.all(cacheKeys.map((key) => chrome.storage.local.get(key)));
-
-  // Stale or malformed entries (no cachedAt, expired, or legacy raw arrays) are
-  // treated as uncached so they get re-embedded with a fresh, uniform shape.
-  const areNotCached = allItems.filter((_, i) => !isCacheFresh(cachedResults[i][cacheKeys[i]]));
-  const areCached = allItems.filter((_, i) => isCacheFresh(cachedResults[i][cacheKeys[i]]));
-  const allCachesCombined = [...areCached, ...areNotCached];
+  const candidateItems: CandidateItem[] = allItems.map((item) => ({
+    url: item.url ?? "",
+    title: item.title ?? "",
+  }));
 
   if (embedding) {
-    const uncachedItems: CandidateItem[] = areNotCached.map((item) => ({
-      url: item.url ?? "",
-      title: item.title ?? "",
+    const embeddings = await getCandidateEmbeddings(candidateItems);
+
+    const scored = candidateItems.map((item, i) => ({
+      score: cosineSimilarity(embedding, embeddings[i]),
+      item,
     }));
-    const uncachedEmbeddings = await fetchUncachedEmbeddings(uncachedItems);
-
-    // Write the canonical CacheEntry shape ({ summary, embedding, cachedAt }) so
-    // every reader can rely on `.embedding` — matches what background.ts writes.
-    areNotCached.forEach((item, i) => {
-      chrome.storage.local.set({
-        [embedCacheKey(item.url ?? "")]: { summary: "", embedding: uncachedEmbeddings[i], cachedAt: Date.now() },
-      });
-    });
-
-    const cachedEmbeddings = await Promise.all(
-      areCached.map(async (item) => {
-        const key = embedCacheKey(item.url ?? "");
-        const result = await chrome.storage.local.get(key);
-        const val = result[key];
-        return (val?.embedding ?? val) as number[];
-      }),
-    );
-
-    const allEmbeddings = [...cachedEmbeddings, ...uncachedEmbeddings];
-
-    const score = allEmbeddings.map((e) => cosineSimilarity(embedding, e));
-    const scored = allCachesCombined.map((item, i) => ({ score: score[i], item }));
     const top20 = scored.sort((a, b) => b.score - a.score).slice(0, 20);
 
     const res = await fetch(`${BACKEND_URL}/page-reasoning`, {
@@ -134,7 +126,7 @@ export const fetchPageReasoningData = async (
       headers: jsonHeaders(),
       body: JSON.stringify({
         summary: inputQuery,
-        top_items: allCachesCombined.slice(0, 20).map((item) => ({ title: item.title, url: item.url })),
+        top_items: candidateItems.slice(0, 20).map((item) => ({ title: item.title, url: item.url })),
       }),
     });
 

@@ -214,10 +214,43 @@ export const processURL = (url: string): string => {
   }
 };
 
-// Helps identify a page that is injectable, i.e., resurface 
-// can read its contents. 
+/**
+ * Determines if a given URL points to a page that Resurface can inject and read content from.
+ * Excludes chrome web store and certain internal Chrome pages.
+ *
+ * @param url - The URL to test.
+ * @returns True if the page is injectable, false otherwise.
+ */
 export const isInjectable = (url?: string): boolean =>
   !!url &&
   /^https?:\/\//.test(url) &&
   !url.startsWith("https://chromewebstore.google.com") &&
   !url.startsWith("https://chrome.google.com/webstore");
+
+
+/**
+ * Ensures that the content script is loaded and ready in the given tab.
+ *
+ * Checks if the content script responds to a PING message. If not, attempts to inject
+ * the content script files declared in the manifest into the specified tab.
+ *
+ * @param tabId - The ID of the Chrome tab to ensure content script presence.
+ * @returns A promise that resolves to true if the content script is loaded, false otherwise.
+ */
+export const ensureContentScript = async (tabId: number) : Promise<boolean> => {
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: "PING" });
+    return true;
+  } catch (error) {
+    try {
+      const files = chrome.runtime.getManifest().content_scripts?.[0]?.js ?? [];
+      await chrome.scripting.executeScript({ target: { tabId }, files });
+      return true;
+    } catch (error) {
+      // Applies for chrome://, web store, PDF viewer. No action can be taken 
+      // in this case.
+      console.debug("Content script unavailable (chrome://, web store, or PDF viewer):", error);
+      return false;
+    }
+  }
+}

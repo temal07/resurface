@@ -3,7 +3,7 @@ import "./style.css";
 import {
   fetchExpandedQuery,
   fetchPageReasoningData,
-  compareEmbeddingResponse,
+  getCandidateEmbeddings,
   renderPageData,
   renderRelativePageData,
   getFavIconFromPage,
@@ -11,10 +11,10 @@ import {
   pageData,
 } from "../utils/pageData";
 import { getBookmarkedPages, getSearchHistory, comparePages } from "../utils/pageRelevance";
-import { getActiveTab, getPageMeaning } from "../utils/helpers";
+import { getActiveTab, getPageMeaning, cosineSimilarity } from "../utils/helpers";
 import { BACKEND_URL } from "../utils/constants";
-import { TOP_N, embedCacheKey, isCacheFresh, jsonHeaders } from "../utils/config";
-import type { CacheEntry, PageMeaning, RankedPage, StoredResults } from "../types";
+import { TOP_N, SIMILARITY_THRESHOLD, embedCacheKey, isCacheFresh, jsonHeaders } from "../utils/config";
+import type { CacheEntry, CandidateItem, PageMeaning, RankedPage, StoredResults } from "../types";
 
 const container = document.getElementById("page-container") as HTMLElement | null;
 const relatedPageContainer = document.getElementById("relevant-pages-container") as HTMLElement;
@@ -58,23 +58,32 @@ const rankWithFallbacks = async (
   // Either accepts a page summary or a prompt
   const inputQuery = summary || prompt;
 
-  // Tier 1 — server-side embedding compare. Fall through on error OR on empty result set
+  // Tier 1 — local cosine similarity against candidate embeddings (cached where
+  // possible, via getCandidateEmbeddings). Fall through on error, empty result,
+  // or a weak top score (below SIMILARITY_THRESHOLD) to the LLM reasoning tier.
   if (embedding) {
     try {
-      const compareData = await compareEmbeddingResponse(embedding, bookmarks, searchHistory);
-      console.log(compareData);
-      const pages = compareData?.pages ?? [];
-      if (pages.length > 0) {
-        return pages.slice(0, TOP_N).map((page) => ({
+      const candidateItems: CandidateItem[] = [
+        ...bookmarks.map((b) => ({ url: b.url ?? "", title: b.title ?? "" })),
+        ...searchHistory.map((h) => ({ url: h.url ?? "", title: h.title ?? "" })),
+      ];
+      const embeddings = await getCandidateEmbeddings(candidateItems);
+      const scored = candidateItems
+        .map((item, i) => ({ ...item, score: cosineSimilarity(embedding, embeddings[i]) }))
+        .sort((a, b) => b.score - a.score);
+      const top = scored.slice(0, TOP_N);
+
+      if (top.length > 0 && top[0].score >= SIMILARITY_THRESHOLD) {
+        return top.map((page) => ({
           url: page.url,
           title: page.title,
           favIcon: getFavIconFromPage(page.url),
           score: page.score,
         }));
       }
-      console.warn("Embedding compare returned no pages. Falling back to LLM reasoning.");
+      console.warn("Local similarity below threshold. Falling back to LLM reasoning.");
     } catch (embeddingError) {
-      console.warn("Embedding compare failed. Falling back to LLM reasoning.", embeddingError);
+      console.warn("Local similarity compare failed. Falling back to LLM reasoning.", embeddingError);
     }
   } else {
     console.warn("No query embedding provided. Skipping embedding compare.");

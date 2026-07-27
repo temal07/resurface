@@ -63,6 +63,11 @@ const extractPageMeaning = async (): Promise<PageMeaning> => {
 
 // Listen for EXTRACT_PAGE_MEANING requests and respond with the extracted page meaning
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type === "PING") {
+    sendResponse({ ok: true });
+    return;
+  }
+
   if (message.type === "EXTRACT_PAGE_MEANING") {
     extractPageMeaning()
       .then((pageMeaning) => {

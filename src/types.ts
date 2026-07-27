@@ -53,10 +53,6 @@ export interface ReasoningResponse {
   pages: { url: string; title: string; reason: string }[];
 }
 
-export interface CompareResponse {
-  pages: { url: string; title: string; score: number }[];
-}
-
 export interface ExpandPromptResponse {
   expanded_query: string;
   embeddings: number[];
