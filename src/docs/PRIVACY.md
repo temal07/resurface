@@ -9,6 +9,10 @@ Resurface is a Chrome extension that surfaces relevant pages from your browsing 
 - **Browsing history and bookmarks.** Resurface reads your history and bookmarks to build an index of pages you have already visited or saved, so it can surface relevant ones.
 - **Page content.** For pages included in the index, Resurface extracts text content in order to generate a summary and a numerical representation (an "embedding") used to compare pages for relevance.
 
+## Paid-tier
+
+Resurface uses a paid Gemini API tier. Google does not use the data submitted through the paid-tier API access to train its models; retention is limited to abuse monitoring.
+
 ## Where data goes
 
 Page text is sent to the Resurface backend service, which forwards it to Google's Gemini API to generate the summary and embedding. The result is returned to your browser.
