@@ -11,7 +11,7 @@ import {
   pageData,
 } from "../utils/pageData";
 import { getBookmarkedPages, getSearchHistory, comparePages } from "../utils/pageRelevance";
-import { getActiveTab, getPageMeaning, cosineSimilarity } from "../utils/helpers";
+import { getActiveTab, getPageMeaning, cosineSimilarity, ensureContentScript } from "../utils/helpers";
 import { BACKEND_URL } from "../utils/constants";
 import { TOP_N, SIMILARITY_THRESHOLD, embedCacheKey, isCacheFresh, jsonHeaders } from "../utils/config";
 import type { CacheEntry, CandidateItem, PageMeaning, RankedPage, StoredResults } from "../types";
@@ -165,9 +165,14 @@ const runInspection = async (
 
     // on-demand trigger on the page data instead of calling fetchGeneratedPageData()
     if (!generatedPageData) {
+      // The content script only runs on tabs that were (re)loaded after the
+      // extension was installed/updated. On tabs opened before that, nothing
+      // is listening yet and sendMessage below would fail with "Could not
+      // establish connection." — inject it on-demand first.
+      await ensureContentScript(tab.id!);
       const pageResponse = await getPageMeaning(tab.id!)
 
-      if (!pageResponse) 
+      if (!pageResponse)
         renderInspectionError("Cannot read this page.");
       const res = await fetch(`${BACKEND_URL}/process-page`, {
         method: "POST",
@@ -298,6 +303,10 @@ const init = async (): Promise<void> => {
   let pageMeaning: PageMeaning | null = null;
   if (tab.id != null) {
     try {
+      // Inject the content script on-demand — tabs opened before the extension
+      // was installed/updated have no listener yet, so sendMessage below would
+      // otherwise fail with "Could not establish connection."
+      await ensureContentScript(tab.id);
       pageMeaning = await getPageMeaning(tab.id);
     } catch (err) {
       console.warn("Could not read page meaning; continuing without it.", err);
