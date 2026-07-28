@@ -72,7 +72,7 @@ const rankWithFallbacks = async (
       const scored = candidateItems
         .map((item, i) => ({ ...item, score: cosineSimilarity(embedding, embeddings[i]) }))
         .sort((a, b) => b.score - a.score);
-      const top = scored.slice(0, TOP_N);
+      const top = scored.filter((s) => s.score >= SIMILARITY_THRESHOLD).slice(0, TOP_N);
 
        // Fire-and-forget: upgrades the highest-scoring title-only candidates so
       // the next search ranks them on real content. Intentionally not awaited.
@@ -82,7 +82,7 @@ const rankWithFallbacks = async (
       // (no-floating-promises)
       void backfillTitleOnly(scored.slice(0, 20));
 
-      if (top.length > 0 && top[0].score >= SIMILARITY_THRESHOLD) {
+      if (top.length > 0) {
         return top.map((page) => ({
           url: page.url,
           title: page.title,
