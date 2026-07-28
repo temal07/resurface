@@ -49,3 +49,19 @@ class ExpandedPromptResponse(BaseModel):
     expanded_query: str
     embeddings: List[float]
 
+
+class BackfillRequest(BaseModel):
+    urls: List[str]
+
+
+class BackfillItem(BaseModel):
+    url: str
+    # Empty when status is not equal to OK. Marked as "unfetchable"
+    summary: str = ""
+    embedding: List[float] = []
+    status: str
+
+
+class BackfillResponse(BaseModel):
+    items: List[BackfillItem]
+

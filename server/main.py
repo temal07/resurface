@@ -26,6 +26,11 @@ from utils.models import (
     PromptRequest,
     ExpandedPromptResponse,
 )
+from concurrent.futures import ThreadPoolExecutor
+from utils.backfill_helpers import fetch_page_text
+from utils.models import (
+    BackfillItem, BackfillRequest, BackfillResponse
+)
 import logging
 
 load_dotenv()
@@ -47,6 +52,9 @@ API_SECRET = os.getenv("API_SECRET")
 MAX_BODY_CHARS = 20_000
 
 logger = logging.getLogger("uvicorn.error")
+
+MAX_BACKFILL_URLS = 10
+FETCH_WORKERS = 10
 
 
 def require_secret(x_api_key: str = Header(default="")):
@@ -309,3 +317,113 @@ def expand_prompt(request: Request, req: PromptRequest):
         "expanded_query": expanded_query,
         "embeddings": embeddings,
     }
+
+
+@app.post("/backfill", response_model=BackfillResponse, dependencies=[Depends(require_secret)])
+@limiter.limit("10/minute")
+def backfill(request: Request, req: BackfillRequest):
+    """
+        Re-fetches pages the extension only has a title and URL for (history and
+        bookmarks predating install), and returns a content-based summary and
+        embedding for each. Roughly half of real-world URLs are unrecoverable —
+        login walls and client-rendered apps return no text — so every URL carries
+        its own status and one failure never fails the batch.
+    """
+    # Get the first 10 urls to avoid over-requesting
+    urls = req.urls[:MAX_BACKFILL_URLS]
+    if not urls:
+        return {"items": []}
+
+    
+    # ---- 1. Fetch in parallel ----
+    with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as pool:
+        fetched = list(pool.map(fetch_page_text, urls))
+
+    results: List[dict] = []
+    summarisable: List[tuple[int, str, str]] = [] # (index : int, url : str, text : str)
+
+    for i, (text, status) in enumerate(fetched):
+        results.append({"url": urls[i], "summary": "", "embedding": [], "status": status})
+        if status == "ok":
+            summarisable.append((i, urls[i], text))
+
+    
+    if not summarisable:
+        return {"items": results}
+
+    # ---- 2. Summarise each fetched page ----
+
+    for i, url, text in summarisable:
+        prompt = f"""
+            You are an information extraction system.
+ 
+            Describe the SUBJECT MATTER of the page below, using ONLY the
+            content provided. Do not invent context or rely on prior knowledge
+            of the website.
+ 
+            DISALLOWED CONTENT:
+            - IGNORE navigation, sidebars, headers, footers, buttons, UI labels.
+            - IGNORE cookie notices, legal boilerplate, and subscription prompts.
+            - DO NOT describe the website or app itself unless the main content
+              explicitly discusses it.
+ 
+            FOCUS RULES:
+            - Begin by stating the subject matter directly.
+            - Identify ONE dominant topic. Do NOT blend unrelated topics.
+            - Write as a neutral encyclopedia entry about the subject matter.
+ 
+            INPUT:
+            URL: {url}
+            Body: {text}
+ 
+            OUTPUT FORMAT (STRICT):
+            A single paragraph, 4 to 5 sentences, covering the primary topic,
+            what someone reading this page would be trying to learn or do, and
+            the key technical or conceptual details.
+ 
+            FAILURE CONDITION:
+            If there is not enough meaningful content to describe the subject,
+            respond EXACTLY with:
+            INSUFFICIENT_CONTEXT
+        """
+
+        try: 
+            resp = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=NO_THINKING
+            )
+            summary = (resp.text or "").strip()
+        except Exception as e:
+            logger.error("backfill summary failed: %s", type(e).__name__)
+            results[i]["status"] = "summary_error"
+            continue
+
+        if not summary or summary == "INSUFFICIENT_CONTEXT":
+            results[i]["status"] = "no_signal"
+            continue
+
+
+        results[i]["summary"] = summary
+
+
+    # ---- 3. Embed the summaries in one batched call ----
+    embed_targets = [r for r in results if r["summary"]]
+    if embed_targets:
+        try:
+            embed_resp = client.models.embed_content(
+                model="gemini-embedding-001",
+                contents=[r["summary"] for r in embed_targets],
+                config={"task_type": "RETRIEVAL_DOCUMENT"},
+            )
+            for r, e in zip(embed_targets, embed_resp.embeddings):
+                r["embedding"] = e.values
+                r["status"] = "ok"
+        except Exception as e:
+            logger.error("backfill embed failed: %s", type(e).__name__)
+            for r in embed_targets:
+                r["status"] = "embed_error"
+                r["summary"] = ""
+ 
+    return {"items": results}
+ 
