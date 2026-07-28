@@ -3,7 +3,7 @@ import os
 import threading
 import time
 import urllib.request
-from collections import Counter
+from collections import Counter, deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Header, Depends, Request
@@ -48,6 +48,10 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 # In-memory, so it resets on every deploy and whenever Render spins the
 # instance down.
 call_counts = Counter()
+
+# Recent request log backing /monitor, newest at the end. Bounded so it can't
+# grow unbounded on a long-lived instance; older entries just fall off.
+recent_requests = deque(maxlen=500)
 
 # gemini-2.5-flash runs an internal "thinking" pass before answering, adding
 # several seconds per call. Extraction/ranking/expansion don't need reasoning
