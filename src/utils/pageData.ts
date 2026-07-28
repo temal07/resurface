@@ -3,8 +3,10 @@
 import { cosineSimilarity } from "./helpers";
 import { BACKEND_URL } from "./constants";
 import { getBookmarkedPages, getSearchHistory } from "./pageRelevance";
-import { embedCacheKey, isCacheFresh, jsonHeaders } from "./config";
+import { BACKFILL_BATCH, embedCacheKey, isCacheFresh, jsonHeaders } from "./config";
 import type {
+  BackfillItem,
+  CacheEntry,
   CandidateItem,
   ExpandPromptResponse,
   PageData,
@@ -88,6 +90,76 @@ export const getCandidateEmbeddings = async (items: CandidateItem[]): Promise<nu
   });
 
   return embeddings;
+};
+
+/**
+ * Upgrades title-only cache entries to content-based ones by re-fetching the
+ * page server-side. Runs AFTER results are shown, never before: a backfill
+ * round-trip is ~7s and the user is already looking at their results. The
+ * payoff lands on the next search instead.
+ *
+ * Deliberately fire-and-forget — nothing awaits this, and any failure is
+ * swallowed. A failed upgrade leaves the existing title embedding in place,
+ * so the worst case is "no better than before", never "worse".
+ */
+export const backfillTitleOnly = async (candidates: CandidateItem[]): Promise<void> => {
+  console.log("BACKFILL called with", candidates.length);
+  
+  const keys = candidates.map((c) => embedCacheKey(c.url));
+  const stored = await Promise.all(keys.map((k) => chrome.storage.local.get(k)));
+
+  // Only "title" entries are eligible. "content" is already done, and
+  // "unfetchable" failed before — retrying it burns quota for a known miss.
+  const eligible = candidates.filter((_, i) => {
+    const entry = stored[i][keys[i]] as CacheEntry | undefined;
+    return entry?.source === "title";
+  });
+
+  
+  if (eligible.length === 0) return;
+  console.log("backfill: eligible", eligible.length);
+
+  const batch = eligible.slice(0, BACKFILL_BATCH);
+
+  let items: BackfillItem[];
+  try {
+    const res = await fetch(`${BACKEND_URL}/backfill`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ urls: batch.map((c) => c.url) }),
+    });
+    if (!res.ok) return;
+    ({ items } = (await res.json()) as { items: BackfillItem[] });
+  } catch {
+    return; // offline, rate-limited, cold start — try again next search
+  }
+
+  // One batched write rather than N. Chrome throttles storage writes per
+  // minute, and a per-item loop here is the easiest way to hit that ceiling.
+  const updates: Record<string, CacheEntry> = {};
+  for (const item of items) {
+    const key = embedCacheKey(item.url);
+
+    if (item.status === "ok" && item.embedding.length > 0) {
+      updates[key] = {
+        summary: item.summary,
+        embedding: item.embedding,
+        cachedAt: Date.now(),
+        source: "content",
+      };
+    } else {
+      // Preserve the existing title embedding; only mark it as a dead end so
+      // future searches skip it. Without this, every search retries every
+      // login page in the user's bookmarks, forever.
+      const existing = (await chrome.storage.local.get(key))[key] as CacheEntry | undefined;
+      if (!existing) continue;
+      updates[key] = { ...existing, source: "unfetchable" };
+    }
+  }
+
+  if (Object.keys(updates).length > 0) {
+    await chrome.storage.local.set(updates);
+  }
 };
 
 export const fetchPageReasoningData = async (

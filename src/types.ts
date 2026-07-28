@@ -14,12 +14,19 @@ export interface PageData {
   body: string;
 }
 
-/** chrome.storage.local entry stored under `embed<url>`. */
+/** chrome.storage.local entry stored under `embed:v2:<url>`.
+ *
+ *  source tells us how good the embedding is, and what to do next:
+ *    "content"     — built from real page text. Done, nothing to improve.
+ *    "title"       — built from the title alone. Upgrade when possible.
+ *    "unfetchable" — backfill tried and failed (login wall, SPA shell, 403).
+ *                    Keeps the title embedding, but never retry the fetch.
+ */
 export interface CacheEntry {
   summary: string;
   embedding: number[];
   cachedAt?: number;
-  source?: "content" | "title";
+  source?: "content" | "title" | "unfetchable";
 }
 
 /** Result of content.js DOM extraction. */
@@ -68,4 +75,12 @@ export interface CandidateItem {
 export interface StoredResults {
   pages: RankedPage[];
   savedAt: number;
+}
+
+/** Response item from POST /backfill. */
+export interface BackfillItem {
+  url: string;
+  summary: string;
+  embedding: number[];
+  status: string; // "ok" when usable; anything else means unfetchable
 }

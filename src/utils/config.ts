@@ -13,6 +13,9 @@ export const jsonHeaders = (): Record<string, string> => ({
 /** Max results surfaced by every ranking tier, so the popup list stays bounded. */
 export const TOP_N = 5;
 
+/** Matches MAX_BACKFILL_URLS on the server. One request per search, no more. */
+export const BACKFILL_BATCH = 10;
+
 /**
  * Minimum cosine score the top local-similarity match must clear before it's
  * trusted on its own. Below this, `rankWithFallbacks` escalates to the LLM

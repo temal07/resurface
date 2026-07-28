@@ -9,6 +9,7 @@ import {
   getFavIconFromPage,
   updatePageData,
   pageData,
+  backfillTitleOnly,
 } from "../utils/pageData";
 import { getBookmarkedPages, getSearchHistory, comparePages } from "../utils/pageRelevance";
 import { getActiveTab, getPageMeaning, cosineSimilarity, ensureContentScript } from "../utils/helpers";
@@ -72,6 +73,14 @@ const rankWithFallbacks = async (
         .map((item, i) => ({ ...item, score: cosineSimilarity(embedding, embeddings[i]) }))
         .sort((a, b) => b.score - a.score);
       const top = scored.slice(0, TOP_N);
+
+       // Fire-and-forget: upgrades the highest-scoring title-only candidates so
+      // the next search ranks them on real content. Intentionally not awaited.
+
+      // void is just a way of saying "Even though the function returns a promise 
+      // I am intentionally not awaiting it" Not using void would throw an Error 
+      // (no-floating-promises)
+      void backfillTitleOnly(scored.slice(0, 20));
 
       if (top.length > 0 && top[0].score >= SIMILARITY_THRESHOLD) {
         return top.map((page) => ({
