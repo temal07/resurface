@@ -19,6 +19,7 @@ export interface CacheEntry {
   summary: string;
   embedding: number[];
   cachedAt?: number;
+  source?: "content" | "title";
 }
 
 /** Result of content.js DOM extraction. */

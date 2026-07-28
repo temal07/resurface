@@ -65,7 +65,7 @@ export const normalizeUrlForCache = (raw: string): string => {
  * The one place embedding-cache keys are built. Every reader and writer must
  * use this so normalized writes never become misses elsewhere.
  */
-export const embedCacheKey = (url: string): string => `embed${normalizeUrlForCache(url)}`;
+export const embedCacheKey = (url: string): string => `embed:v2:${normalizeUrlForCache(url)}`;
 
 /** How long a cached page embedding stays valid before it is re-embedded. */
 export const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days

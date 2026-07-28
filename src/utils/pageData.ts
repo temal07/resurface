@@ -74,7 +74,7 @@ export const getCandidateEmbeddings = async (items: CandidateItem[]): Promise<nu
 
   uncachedItems.forEach((item, i) => {
     chrome.storage.local.set({
-      [embedCacheKey(item.url)]: { summary: "", embedding: uncachedEmbeddings[i], cachedAt: Date.now() },
+      [embedCacheKey(item.url)]: { summary: "", embedding: uncachedEmbeddings[i], cachedAt: Date.now(), source: "title" },
     });
   });
 

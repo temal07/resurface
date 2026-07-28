@@ -63,9 +63,12 @@ const embedIfStillViewing = async (tabId: number, originalUrl: string): Promise<
 
   const cached = await chrome.storage.local.get(cacheKey);
 
-  // Skip only when a fresh (non-expired) entry already exists; stale ones fall
+  // Skip only when a fresh (non-expired) entry already exists AND it's 
+  // a content-based embedding. Stale ones fall
   // through and get re-embedded, overwriting the old value below.
-  if (isCacheFresh(cached[cacheKey])) {
+  const cacheEntry = cached[cacheKey];
+
+  if (isCacheFresh(cacheEntry) && cacheEntry.source === "content") {
     console.log("Fresh cache exists, skipping embed:", originalUrl);
     return;
   }
@@ -105,6 +108,7 @@ const embedIfStillViewing = async (tabId: number, originalUrl: string): Promise<
         summary: data.summary,
         embedding: data.embedding,
         cachedAt: Date.now(),
+        source: "content",
       },
     });
 
