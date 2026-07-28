@@ -3,6 +3,8 @@ import os
 import threading
 import time
 import urllib.request
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Header, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +14,7 @@ from google import genai
 from google.genai import types
 from typing import List, Optional, Union
 from utils.helpers import extract_url, list_chunker
+from utils.backfill_helpers import fetch_page_text
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -25,17 +28,26 @@ from utils.models import (
     EmbedItemsRequest,
     PromptRequest,
     ExpandedPromptResponse,
-)
-from concurrent.futures import ThreadPoolExecutor
-from utils.backfill_helpers import fetch_page_text
-from utils.models import (
-    BackfillItem, BackfillRequest, BackfillResponse
+    BackfillItem,
+    BackfillRequest,
+    BackfillResponse,
 )
 import logging
 
 load_dotenv()
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+# Gemini call counter, read via /stats. Counts only — no URLs, no content, no
+# user identity — so it doesn't touch the "we store nothing" claim.
+#
+# Embeddings are counted per ITEM, not per call: Gemini bills per input, so one
+# batched call with 100 titles costs ~100x a single-title call. Generation is
+# counted per call.
+#
+# In-memory, so it resets on every deploy and whenever Render spins the
+# instance down.
+call_counts = Counter()
 
 # gemini-2.5-flash runs an internal "thinking" pass before answering, adding
 # several seconds per call. Extraction/ranking/expansion don't need reasoning
@@ -51,10 +63,10 @@ API_SECRET = os.getenv("API_SECRET")
 # Cap the page text fed to Gemini so a single request can't run up a huge call.
 MAX_BODY_CHARS = 20_000
 
-logger = logging.getLogger("uvicorn.error")
-
 MAX_BACKFILL_URLS = 10
 FETCH_WORKERS = 10
+
+logger = logging.getLogger("uvicorn.error")
 
 
 def require_secret(x_api_key: str = Header(default="")):
@@ -118,6 +130,16 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/stats", dependencies=[Depends(require_secret)])
+def stats():
+    """
+    Gemini call counts since the last restart. To get cost-per-search: read
+    this, run one search, read it again, and diff. Multiply the delta by any
+    candidate-count increase you're considering before making it.
+    """
+    return dict(call_counts)
+
+
 @app.post("/process-page", response_model=PageDataResponse, dependencies=[Depends(require_secret)])
 @limiter.limit("20/minute")
 def process_page(request: Request, req: PageDataRequest):
@@ -175,6 +197,7 @@ def process_page(request: Request, req: PageDataRequest):
 
     # ---- 2. Generate summary ----
     try:
+        call_counts["process_page.generate"] += 1
         summary_resp = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
@@ -187,6 +210,7 @@ def process_page(request: Request, req: PageDataRequest):
 
     # ---- 3. Generate embedding ----
     try:
+        call_counts["process_page.embed"] += 1
         embed_resp = client.models.embed_content(
             model="gemini-embedding-001",
             contents=f"{req.name}\n{req.description}\n{summary}",
@@ -238,6 +262,7 @@ def page_reasoning(request: Request, req: PageReasoningRequest):
         """
 
     try:
+        call_counts["page_reasoning.generate"] += 1
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
@@ -264,6 +289,9 @@ def embed_uncached(request: Request, req: EmbedItemsRequest):
 
     try:
         for chunked_items in chunked_list:
+            # Per item, not per call: this is the endpoint that scales with
+            # maxResults, so it's the one to watch before raising the cap.
+            call_counts["embed_uncached.embed"] += len(chunked_items)
             embed_response = client.models.embed_content(
                 model="gemini-embedding-001",
                 contents=[item.title.strip() or item.url or "untitled" for item in chunked_items],
@@ -294,6 +322,7 @@ def expand_prompt(request: Request, req: PromptRequest):
     """
 
     try:
+        call_counts["expand_prompt.generate"] += 1
         prompt_res = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
@@ -303,6 +332,7 @@ def expand_prompt(request: Request, req: PromptRequest):
 
         # generate embeddings for the expanded prompt
 
+        call_counts["expand_prompt.embed"] += 1
         embed_resp = client.models.embed_content(
             model="gemini-embedding-001",
             contents=f"{expanded_query}",
@@ -334,25 +364,24 @@ def backfill(request: Request, req: BackfillRequest):
     if not urls:
         return {"items": []}
 
-    
     # ---- 1. Fetch in parallel ----
     with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as pool:
         fetched = list(pool.map(fetch_page_text, urls))
 
     results: List[dict] = []
-    summarisable: List[tuple[int, str, str]] = [] # (index : int, url : str, text : str)
+    summarisable: List[tuple[int, str, str]] = []  # (index : int, url : str, text : str)
 
     for i, (text, status) in enumerate(fetched):
         results.append({"url": urls[i], "summary": "", "embedding": [], "status": status})
         if status == "ok":
             summarisable.append((i, urls[i], text))
 
-    
     if not summarisable:
         return {"items": results}
 
     # ---- 2. Summarise each fetched page ----
-
+    # This loop is the expensive half: up to MAX_BACKFILL_URLS generate calls
+    # per search, against one batched embed call in step 3.
     for i, url, text in summarisable:
         prompt = f"""
             You are an information extraction system.
@@ -387,7 +416,8 @@ def backfill(request: Request, req: BackfillRequest):
             INSUFFICIENT_CONTEXT
         """
 
-        try: 
+        try:
+            call_counts["backfill.generate"] += 1
             resp = client.models.generate_content(
                 model="gemini-2.5-flash",
                 contents=prompt,
@@ -403,14 +433,13 @@ def backfill(request: Request, req: BackfillRequest):
             results[i]["status"] = "no_signal"
             continue
 
-
         results[i]["summary"] = summary
-
 
     # ---- 3. Embed the summaries in one batched call ----
     embed_targets = [r for r in results if r["summary"]]
     if embed_targets:
         try:
+            call_counts["backfill.embed"] += len(embed_targets)
             embed_resp = client.models.embed_content(
                 model="gemini-embedding-001",
                 contents=[r["summary"] for r in embed_targets],
@@ -426,4 +455,3 @@ def backfill(request: Request, req: BackfillRequest):
                 r["summary"] = ""
  
     return {"items": results}
- 
