@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
-    "name": "Resurface - Contextual Page Discovery",
-    "version": "1.0.1",
-    "description": "Resurface helps you rediscover contextually relevant pages you've searched or saved in the past.",
+    "name": "Resurface - Page Discovery",
+    "version": "1.0.2",
+    "description": "Resurface helps you rediscover pages you've searched or saved in the past.",
     "permissions": ["bookmarks", "storage", "tabs", "history", "unlimitedStorage", "scripting"],
     "host_permissions": ["https://*/*", "http://*/*"],
     "icons": {

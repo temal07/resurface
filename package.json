@@ -1,7 +1,7 @@
 {
   "name": "resurface",
-  "version": "1.0.0",
-  "description": "Chrome extension that surfaces contextually relevant bookmarks and history.",
+  "version": "1.0.2",
+  "description": "Chrome extension that helps you rediscover pages you've visited before.",
   "type": "module",
   "scripts": {
     "dev": "vite",
