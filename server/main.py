@@ -123,6 +123,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def record_request(request: Request, call_next):
+    started = time.monotonic()
+    response = await call_next(request)
+    elapsed = time.monotonic() - started
+ 
+    # Skip the monitor's own polling and the keepalive pings, or the log fills
+    # with itself and shows nothing useful.
+    if request.url.path not in ("/monitor", "/", "/stats"):
+        recent_requests.append({
+            "path": request.url.path,
+            "status": response.status_code,
+            "ms": round(elapsed * 1000),
+            "at": time.time(),
+        })
+ 
+    return response
+
 # -------- Routes --------
 
 @app.get("/")
@@ -138,6 +156,17 @@ def stats():
     candidate-count increase you're considering before making it.
     """
     return dict(call_counts)
+
+@app.get("/monitor", dependencies=[Depends(require_secret)])
+def monitor():
+    """
+    Recent request activity, newest last. Feeds the terminal monitor script.
+    In-memory and bounded, so it resets on deploy and on Render spin-down.
+    """
+    return {
+        "requests": list(recent_requests),
+        "counts": dict(call_counts),
+    }
 
 
 @app.post("/process-page", response_model=PageDataResponse, dependencies=[Depends(require_secret)])
