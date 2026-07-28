@@ -119,3 +119,12 @@ const embedIfStillViewing = async (tabId: number, originalUrl: string): Promise<
     inFlightKeys.delete(cacheKey);
   }
 };
+
+// Clean up the dead "embedding" formatted cache entries:
+chrome.runtime.onInstalled.addListener(async () => {
+  const all = await chrome.storage.local.get(null);
+  const stale = Object.keys(all).filter(
+    (k) => k.startsWith("embed") && !k.startsWith("embed:v2:")
+  );
+  if (stale.length) await chrome.storage.local.remove(stale);
+});
