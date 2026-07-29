@@ -17,6 +17,14 @@ export const TOP_N = 5;
 export const BACKFILL_BATCH = 10;
 
 /**
+ * Max bookmark/history candidates resolved to embeddings per search. History
+ * can hold up to 500 items (90-day window); this keeps the embedding step's
+ * cost bounded by pre-filtering to the top-scoring candidates first, via
+ * topCandidatesByLocalScore.
+ */
+export const EMBEDDING_CANDIDATE_CAP = 200;
+
+/**
  * Minimum cosine score the top local-similarity match must clear before it's
  * trusted on its own. Below this, `rankWithFallbacks` escalates to the LLM
  * reasoning tier instead of returning weak local matches. Gemini embedding

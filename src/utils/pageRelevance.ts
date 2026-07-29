@@ -1,7 +1,7 @@
 import { tokenise, cosineSimilarity, computeIdf, vectoriseTfIdf } from "./helpers";
 import { extractWordsFromUrl, getFavIconFromPage } from "./pageData";
 import { TOP_N } from "./config";
-import type { RankedPage } from "../types";
+import type { CandidateItem, RankedPage } from "../types";
 
 export const getBookmarkedPages = (): Promise<chrome.bookmarks.BookmarkTreeNode[]> => {
   // always reach the bookmarks using a Promise since popup.js needs to display the information.
@@ -44,13 +44,13 @@ export const getSearchHistory = (): Promise<chrome.history.HistoryItem[]> => {
       return;
     }
 
-    const oneMonthAgo = new Date().getTime() - 30 * 24 * 60 * 60 * 1000;
+    const ninetyDaysAgo = new Date().getTime() - 90 * 24 * 60 * 60 * 1000;
 
     chrome.history.search(
       {
         text: "",
-        startTime: oneMonthAgo,
-        maxResults: 200,
+        startTime: ninetyDaysAgo,
+        maxResults: 500,
       },
       (historyItems) => {
         resolve(historyItems);
@@ -93,4 +93,35 @@ export const comparePages = (
   }));
 
   return results.sort((a, b) => b.score - a.score).slice(0, TOP_N);
+};
+
+/**
+ * Cheap client-side pre-filter used before the network-costly embedding step:
+ * ranks candidates by TF-IDF cosine similarity against the query and keeps
+ * only the top `cap`. A 90-day/500-result history window makes for a large
+ * candidate pool; without this, every one of those candidates gets resolved
+ * to an embedding (a cache miss = a real `/embed-uncached` call) on every
+ * search. Ranking by relevance rather than recency means the candidates that
+ * get embedded are the ones actually likely to match, not just the newest.
+ */
+export const topCandidatesByLocalScore = (
+  candidates: CandidateItem[],
+  query: string,
+  cap: number,
+): CandidateItem[] => {
+  if (candidates.length <= cap) return candidates;
+
+  const candidateTokens = candidates.map((c) => [...tokenise(c.title), ...extractWordsFromUrl(c.url)]);
+  const queryTokens = tokenise(query);
+  const idf = computeIdf([...candidateTokens, queryTokens]);
+  const queryVector = vectoriseTfIdf(queryTokens, idf);
+
+  return candidates
+    .map((c, i) => ({
+      item: c,
+      score: cosineSimilarity(vectoriseTfIdf(candidateTokens[i], idf), queryVector),
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, cap)
+    .map((x) => x.item);
 };

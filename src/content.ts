@@ -71,7 +71,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "EXTRACT_PAGE_MEANING") {
     extractPageMeaning()
       .then((pageMeaning) => {
-        console.log("Page meaning extracted:", pageMeaning);
         sendResponse(pageMeaning);
       })
       .catch((err) => {

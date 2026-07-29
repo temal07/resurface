@@ -11,10 +11,17 @@ import {
   pageData,
   backfillTitleOnly,
 } from "../utils/pageData";
-import { getBookmarkedPages, getSearchHistory, comparePages } from "../utils/pageRelevance";
+import { getBookmarkedPages, getSearchHistory, comparePages, topCandidatesByLocalScore } from "../utils/pageRelevance";
 import { getActiveTab, getPageMeaning, cosineSimilarity, ensureContentScript } from "../utils/helpers";
 import { BACKEND_URL } from "../utils/constants";
-import { TOP_N, SIMILARITY_THRESHOLD, embedCacheKey, isCacheFresh, jsonHeaders } from "../utils/config";
+import {
+  TOP_N,
+  SIMILARITY_THRESHOLD,
+  EMBEDDING_CANDIDATE_CAP,
+  embedCacheKey,
+  isCacheFresh,
+  jsonHeaders,
+} from "../utils/config";
 import type { CacheEntry, CandidateItem, PageMeaning, RankedPage, StoredResults } from "../types";
 
 const container = document.getElementById("page-container") as HTMLElement | null;
@@ -64,10 +71,18 @@ const rankWithFallbacks = async (
   // or a weak top score (below SIMILARITY_THRESHOLD) to the LLM reasoning tier.
   if (embedding) {
     try {
-      const candidateItems: CandidateItem[] = [
+      const allCandidateItems: CandidateItem[] = [
         ...bookmarks.map((b) => ({ url: b.url ?? "", title: b.title ?? "" })),
         ...searchHistory.map((h) => ({ url: h.url ?? "", title: h.title ?? "" })),
       ];
+      // Pre-filter locally (cheap TF-IDF) before the network-costly embedding
+      // step, so a large history pool doesn't turn into an equally large
+      // /embed-uncached batch every search.
+      const candidateItems = topCandidatesByLocalScore(
+        allCandidateItems,
+        inputQuery ?? "",
+        EMBEDDING_CANDIDATE_CAP,
+      );
       const embeddings = await getCandidateEmbeddings(candidateItems);
       const scored = candidateItems
         .map((item, i) => ({ ...item, score: cosineSimilarity(embedding, embeddings[i]) }))
@@ -101,7 +116,6 @@ const rankWithFallbacks = async (
   // Tier 2 — LLM reasoning. Same empty-result guard.
   try {
     const recommendations = await fetchPageReasoningData(inputQuery ?? "", embedding);
-    console.log(recommendations);
     const pages = recommendations?.pages ?? [];
     if (pages.length > 0) {
       return pages.slice(0, TOP_N).map((page) => ({
@@ -158,11 +172,8 @@ const runInspection = async (
 
   try {
     const cacheKey = embedCacheKey(tab.url ?? "");
-    console.log("Cache key: ", cacheKey);
     const cached = await chrome.storage.local.get(cacheKey);
-    console.log("Cached: ", cached);
     let generatedPageData: CacheEntry | null = cached[cacheKey] || null;
-    console.log("Generated Page Data", generatedPageData);
 
     // Treat anything that isn't a fresh, well-formed CacheEntry as a miss. This
     // covers legacy raw-array entries and expired embeddings (TTL), clearing
@@ -198,7 +209,6 @@ const runInspection = async (
       generatedPageData = (await res.json()) as CacheEntry;
       await chrome.storage.local.set({ [cacheKey]: { ...generatedPageData, cachedAt: Date.now() } });
     }
-    console.log("Gemini page summary:", generatedPageData.summary);
 
     console.time("rankWithFallbacks (with summary)");
     const finalResults = await rankWithFallbacks(
@@ -236,7 +246,6 @@ const runPromptInspection = async (
 
   const { expanded_query, embeddings } = await fetchExpandedQuery(prompt);
 
-  console.log(expanded_query, embeddings);
   try {
     console.time("rankWithFallbacks (with prompt)");
     const finalResults = await rankWithFallbacks(
@@ -247,7 +256,6 @@ const runPromptInspection = async (
       expanded_query,
     );
     console.timeEnd("rankWithFallbacks (with prompt)");
-    console.log(finalResults);
     renderRelativePageData(finalResults, relatedPageContainer);
   } catch (error) {
     console.error(error);
@@ -357,7 +365,6 @@ const init = async (): Promise<void> => {
     promptInput.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
-        console.log("prompt button entered");
         runPromptInspection(bookmarks, searchHistory);
       }
     });

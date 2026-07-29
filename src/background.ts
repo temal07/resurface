@@ -69,7 +69,6 @@ const embedIfStillViewing = async (tabId: number, originalUrl: string): Promise<
   const cacheEntry = cached[cacheKey];
 
   if (isCacheFresh(cacheEntry) && cacheEntry.source === "content") {
-    console.log("Fresh cache exists, skipping embed:", originalUrl);
     return;
   }
 
@@ -112,7 +111,6 @@ const embedIfStillViewing = async (tabId: number, originalUrl: string): Promise<
       },
     });
 
-    console.log("Cached embedding for:", originalUrl);
   } catch (error) {
     console.warn("Background embedding failed:", error);
   } finally {

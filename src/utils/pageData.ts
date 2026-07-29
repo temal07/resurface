@@ -2,8 +2,8 @@
 
 import { cosineSimilarity } from "./helpers";
 import { BACKEND_URL } from "./constants";
-import { getBookmarkedPages, getSearchHistory } from "./pageRelevance";
-import { BACKFILL_BATCH, embedCacheKey, isCacheFresh, jsonHeaders } from "./config";
+import { getBookmarkedPages, getSearchHistory, topCandidatesByLocalScore } from "./pageRelevance";
+import { BACKFILL_BATCH, EMBEDDING_CANDIDATE_CAP, embedCacheKey, isCacheFresh, jsonHeaders } from "./config";
 import type {
   BackfillItem,
   CacheEntry,
@@ -103,7 +103,6 @@ export const getCandidateEmbeddings = async (items: CandidateItem[]): Promise<nu
  * so the worst case is "no better than before", never "worse".
  */
 export const backfillTitleOnly = async (candidates: CandidateItem[]): Promise<void> => {
-  console.log("BACKFILL called with", candidates.length);
   
   const keys = candidates.map((c) => embedCacheKey(c.url));
   const stored = await Promise.all(keys.map((k) => chrome.storage.local.get(k)));
@@ -117,7 +116,6 @@ export const backfillTitleOnly = async (candidates: CandidateItem[]): Promise<vo
 
   
   if (eligible.length === 0) return;
-  console.log("backfill: eligible", eligible.length);
 
   const batch = eligible.slice(0, BACKFILL_BATCH);
 
@@ -181,9 +179,12 @@ export const fetchPageReasoningData = async (
   }));
 
   if (embedding) {
-    const embeddings = await getCandidateEmbeddings(candidateItems);
+    // Same pre-filter as tier 1: cap what gets resolved to embeddings so a
+    // large history pool doesn't mean a large /embed-uncached batch here too.
+    const capped = topCandidatesByLocalScore(candidateItems, inputQuery, EMBEDDING_CANDIDATE_CAP);
+    const embeddings = await getCandidateEmbeddings(capped);
 
-    const scored = candidateItems.map((item, i) => ({
+    const scored = capped.map((item, i) => ({
       score: cosineSimilarity(embedding, embeddings[i]),
       item,
     }));
