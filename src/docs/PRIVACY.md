@@ -1,6 +1,6 @@
 # Privacy Policy for Resurface
 
-**Last updated:** July 23, 2026
+**Last updated:** July 29, 2026
 
 Resurface is a Chrome extension that surfaces relevant pages from your browsing history and bookmarks. This policy explains what data the extension handles, where it goes, and what is kept.
 
@@ -15,7 +15,9 @@ Resurface uses a paid Gemini API tier. Google does not use the data submitted th
 
 ## Where data goes
 
-Page text is sent to the Resurface backend service, which forwards it to Google's Gemini API to generate the summary and embedding. The result is returned to your browser.
+Page text is sent to the Resurface backend service, which forwards it to Google's Gemini API to generate the summary and embedding. The result is returned to your browser. Pages are processed automatically after you've viewed them for a few seconds, so results are ready when you search, and on demand when you use the extension directly.
+
+When you search, Resurface may also send the URLs of pages from your history and bookmarks to the backend service, which fetches those pages and forwards their text to Gemini to generate a summary and embedding. This lets Resurface search pages you visited before installing the extension. Only publicly accessible pages can be retrieved this way — pages behind a login return no content and are skipped. As with page text, nothing is stored or logged on the backend; the result is returned to your browser and cached locally.
 
 The Resurface backend does not store, log, or retain page content. Text is held in memory only for the duration of the request and is discarded once the response is returned. There is no database and no file storage.
 
@@ -43,6 +45,7 @@ This data never leaves your device except as described above. It is not synced t
 - **`tabs`** — read the URL and title of open tabs so Resurface can find pages related to what you are currently viewing.
 - **`storage`** — cache embeddings and results locally on your device so pages are not reprocessed.
 - **`unlimitedStorage`** — the local cache grows with your history and can exceed Chrome's default storage quota.
+- **`scripting`** — to inject Resurface's own content script into tabs that were already open before the extension was installed or updated. Chrome only injects content scripts into pages loaded afterward, so without this Resurface wouldn't work on those tabs until you reloaded them. No other code is injected.
 
 ## Contact
 
